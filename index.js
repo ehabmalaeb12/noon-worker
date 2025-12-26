@@ -1,144 +1,251 @@
 // index.js
 const express = require("express");
-const cors = require("cors");
-
+const fetch = require("node-fetch");
+const { chromium } = require("playwright"); // uses playwright in Docker image
 const app = express();
-app.use(cors());
-app.use(express.json());
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
+const CACHE_TTL = process.env.CACHE_TTL ? parseInt(process.env.CACHE_TTL) : 60; // seconds
+const USE_HEADLESS_PROXY = process.env.USE_HEADLESS_PROXY === "1"; // optional
 
-// basic root check
-app.get("/", (req, res) => {
-  res.send("Noon worker up. Use /search?q=iphone");
-});
+// simple in-memory cache
+const cache = new Map();
+function setCache(key, value) {
+  cache.set(key, { value, ts: Date.now() });
+}
+function getCache(key) {
+  const entry = cache.get(key);
+  if (!entry) return null;
+  if ((Date.now() - entry.ts) / 1000 > CACHE_TTL) {
+    cache.delete(key);
+    return null;
+  }
+  return entry.value;
+}
 
 /**
- * /search?q=...
- * Uses Noon frontend JSON endpoint `/ _svc/search_v2`
+ * Try Noon internal JSON endpoint (fast). If it returns a products array -> parse and return.
+ * If not, fallback to headless Playwright render.
  */
 app.get("/search", async (req, res) => {
-  const query = (req.query.q || "").trim();
-  if (!query) {
+  const q = (req.query.q || "").trim();
+  if (!q) {
     return res.status(400).json({ error: "Missing query parameter ?q=" });
   }
 
-  const apiUrl =
-    "https://www.noon.com/_svc/search_v2?category=&limit=24&page=1&q=" +
-    encodeURIComponent(query) +
-    "&sort%5Bby%5D=relevance&sort%5Border%5D=desc";
+  const cacheKey = `noon:${q.toLowerCase()}`;
+  const cached = getCache(cacheKey);
+  if (cached) {
+    cached.debug.cached = true;
+    return res.json(cached);
+  }
 
+  const debug = { tried: [], timestamp: new Date().toISOString() };
+
+  // 1) Try noon internal API (may be blocked or return HTML)
   try {
-    const start = Date.now();
-    const response = await fetch(apiUrl, {
+    const apiUrl =
+      "https://www.noon.com/_svc/search_v2?category=&limit=48&page=1&q=" +
+      encodeURIComponent(q) +
+      "&sort%5Bby%5D=relevance&sort%5Border%5D=desc";
+
+    debug.tried.push({ method: "internal_api", url: apiUrl, ts: Date.now() });
+
+    const apiResp = await fetch(apiUrl, {
       headers: {
-        // use a realistic mobile browser UA + origin/referer to avoid trivial blocks
-        "user-agent":
-          "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile Safari/604.1",
-        accept: "application/json, text/plain, */*",
-        "accept-language": "en-US,en;q=0.9",
-        referer: "https://www.noon.com/",
-        origin: "https://www.noon.com",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        Accept: "application/json",
+        "Accept-Language": "en-AE,en;q=0.9",
+        Referer: "https://www.noon.com/",
+        Origin: "https://www.noon.com",
       },
-      // no credentials
+      // 8s timeout
+      timeout: 8000,
     });
 
-    // if the endpoint returns a non-json body (blocked page) this will throw
-    const data = await response.json().catch(() => null);
+    const contentType = apiResp.headers.get("content-type") || "";
+    const text = await apiResp.text();
 
-    // debug: if data is null or missing products -> return debug info
-    if (!data || (!data.products && !data.items)) {
-      return res.json({
-        query,
-        count: 0,
-        results: [],
-        debug: {
-          msg: "No products key in response - site may have blocked this request",
-          status: response.status,
-          headers: Object.fromEntries(response.headers || []),
-          fetched_ms: Date.now() - start,
-        },
-      });
+    // some endpoints respond with JSON string or HTML; try to parse
+    let jsonBody = null;
+    if (contentType.includes("application/json")) {
+      try { jsonBody = JSON.parse(text); } catch(e){ jsonBody = null; }
+    } else {
+      // try parse JSON inside text if exists
+      try {
+        jsonBody = JSON.parse(text);
+      } catch (e) {
+        jsonBody = null;
+      }
     }
 
-    // Noon sometimes nests products under data.products or data.items
-    const products = data.products || data.items || [];
+    if (jsonBody && (jsonBody.products || jsonBody.data?.products)) {
+      const productList = jsonBody.products || jsonBody.data?.products || [];
+      const results = productList.map(p => {
+        // noon's product shape varies; attempt safe mappings
+        const priceObj = p.price || p.sale_price || p.regular_price || {};
+        const price = priceObj.value || p.price_including_tax || p.price_value || null;
+        const currency = priceObj.currency || "AED";
+        const imageKey = p.image_key || p.image || null;
+        const image = imageKey
+          ? (`https://z.nooncdn.com/products/tr:n-t_240/${imageKey}.jpg`)
+          : (p.images && p.images[0]) || null;
+        const url = p.url ? `https://www.noon.com/uae-en/${p.url}` : (p.productUrl || null);
 
-    // Normalize product info safely
-    const results = products.map((p) => {
-      // best-effort price extraction
-      let price = null;
-      if (p.price && typeof p.price === "object") {
-        // many noon objects use keys like price.selling_price or price.value
-        price =
-          p.price.selling_price ||
-          p.price.selling_price_in_cents ||
-          p.price.value ||
-          p.price.min ||
-          null;
-        // if price is in cents and large integer, convert:
-        if (typeof price === "number" && price > 100000) {
-          // guess cents -> convert
-          price = price / 100;
-        }
-      } else if (typeof p.price === "number") {
-        price = p.price;
-      }
+        return {
+          store: "Noon",
+          id: p.sku || p.product_id || p.id || (p.slug ? p.slug : null),
+          title: p.name || p.title || null,
+          price: price ? Number(price) : null,
+          currency,
+          image,
+          link: url,
+          raw: p
+        };
+      }).filter(r => r.title && (r.price || r.price === 0)); // remove items without title or price if you choose
 
-      // image extraction: prefer image_key as we used before
-      let image = null;
-      if (p.image_key) {
-        image = `https://z.nooncdn.com/products/tr:n-t_240/${p.image_key}.jpg`;
-      } else if (p.image && typeof p.image === "string") {
-        image = p.image;
-      } else if (p.images && Array.isArray(p.images) && p.images[0]) {
-        image = p.images[0].url || p.images[0];
-      }
-
-      // url: p.url might be relative
-      let url = null;
-      if (p.url) {
-        url = p.url.startsWith("http") ? p.url : `https://www.noon.com${p.url}`;
-      } else if (p.product_url) {
-        url = p.product_url.startsWith("http")
-          ? p.product_url
-          : `https://www.noon.com${p.product_url}`;
-      } else if (p.secondary_url) {
-        url = p.secondary_url;
-      }
-
-      return {
-        store: "noon",
-        id: p.id || p.sku || p.product_id || null,
-        title: p.name || p.title || p.product_name || null,
-        price: price === undefined ? null : price,
-        currency: "AED",
-        image,
-        url,
-        raw: p, // keep raw product object for debugging/inspection
+      const out = {
+        query: q,
+        count: results.length,
+        results,
+        debug: { ...debug, source: "internal_api" }
       };
-    });
-
-    // optionally drop items without any useful info
-    const filtered = results.filter((r) => r.title || r.price || r.url);
-
-    res.json({
-      query,
-      count: filtered.length,
-      results: filtered,
-      debug: {
-        targetUrl: apiUrl,
-        fetched_ms: Date.now() - start,
-        originalCount: products.length,
-      },
-    });
+      setCache(cacheKey, out);
+      return res.json(out);
+    } else {
+      debug.tried.push({ method: "internal_api_no_products", htmlLength: text.length });
+    }
   } catch (err) {
-    res.status(500).json({ query, count: 0, results: [], error: err.message });
+    debug.tried.push({ method: "internal_api_error", message: err.message });
+  }
+
+  // 2) FALLBACK: Playwright headless render (reliable)
+  // Note: Playwright launch is somewhat heavy; keep this as fallback only.
+  try {
+    debug.tried.push({ method: "playwright_start", ts: Date.now() });
+
+    const launchOptions = {
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+    };
+
+    // optional: if you have a proxy for headless, set env PROXY_URL and USE_HEADLESS_PROXY=1
+    if (USE_HEADLESS_PROXY && process.env.PROXY_URL) {
+      launchOptions.proxy = { server: process.env.PROXY_URL }; // e.g. http://username:pass@proxy:port
+    }
+
+    const browser = await chromium.launch(launchOptions);
+    const context = await browser.newContext({
+      userAgent:
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1",
+      viewport: { width: 1200, height: 900 },
+      locale: "en-AE"
+    });
+    const page = await context.newPage();
+
+    const targetUrl = `https://www.noon.com/uae-en/search/?q=${encodeURIComponent(q)}`;
+    await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
+
+    // Wait for a product container; try multiple selectors to be robust
+    const selectors = [
+      '[data-qa="product-list-item"]',
+      '[data-qa="product-item"]',
+      '.productCard',
+      'div[itemprop="itemListElement"]',
+      '.sc-',
+      'a[href*="/p/"]'
+    ];
+
+    let productElements = [];
+    for (const sel of selectors) {
+      try {
+        await page.waitForSelector(sel, { timeout: 4000 });
+        productElements = await page.$$eval(sel, nodes => nodes.map(n => n.outerHTML));
+        if (productElements && productElements.length > 0) break;
+      } catch (e) {
+        // try next selector
+      }
+    }
+
+    // If still empty, grab generic product anchors
+    if (productElements.length === 0) {
+      productElements = await page.$$eval('a[href*="/p/"]', nodes => nodes.slice(0, 48).map(n => n.closest('div') ? n.closest('div').outerHTML : n.outerHTML));
+    }
+
+    // Extract product items by querying DOM directly for each visible product box
+    const products = await page.$$eval(
+      'a[href*="/p/"], [data-qa="product-list-item"], [data-qa="product-item"], .productCard',
+      anchors => {
+        const seen = new Set();
+        const out = [];
+        anchors.slice(0, 48).forEach(a => {
+          // get root element container
+          const box = a.closest('a') || a;
+          // title
+          const titleEl = box.querySelector('h3, h4, .productTitle, .sc-') || box.querySelector('[data-qa="product-name"]') || box.querySelector('img[alt]');
+          const title = titleEl ? (titleEl.innerText || titleEl.getAttribute('alt') || "").trim() : null;
+          // price
+          let price = null;
+          const pw = box.querySelector('.price, .salePrice, [data-qa="product-price"], .amount, .priceValue, .priceSpan');
+          if (pw) {
+            price = pw.innerText.replace(/[^\d.,]/g, '').replace(',', '.').trim();
+          } else {
+            // try find numbers in text
+            const txt = box.innerText || "";
+            const m = txt.match(/([\d{1,3},]*\d+(\.\d+)?)/);
+            price = m ? m[1].replace(',', '') : null;
+          }
+          // image
+          const img = box.querySelector('img') ? (box.querySelector('img').getAttribute('src') || box.querySelector('img').getAttribute('data-src')) : null;
+          // link
+          const link = (box.querySelector('a') && box.querySelector('a').href) || (box.href || null);
+
+          // an id candidate
+          const id = box.getAttribute('data-sku') || box.getAttribute('data-id') || (link ? link.split('/p/').pop() : null);
+
+          if (!title) return;
+          const numericPrice = price ? Number(price.toString().replace(/,/g, '').replace(/[^0-9.]/g, '')) : null;
+          const key = title + (numericPrice || '');
+          if (seen.has(key)) return;
+          seen.add(key);
+
+          out.push({
+            store: "Noon",
+            id,
+            title: title,
+            price: numericPrice,
+            currency: "AED",
+            image: img,
+            link
+          });
+        });
+        return out;
+      }
+    );
+
+    await browser.close();
+
+    // Filter & normalize
+    const results = products.filter(p => p.title && (p.price || p.price === 0)).slice(0, 48);
+
+    const out = {
+      query: q,
+      count: results.length,
+      results,
+      debug: { ...debug, source: "playwright", targetUrl, found: results.length }
+    };
+
+    setCache(cacheKey, out);
+    return res.json(out);
+  } catch (err) {
+    debug.tried.push({ method: "playwright_error", message: err.message });
+    return res.status(500).json({ query: q, count: 0, results: [], debug });
   }
 });
 
-// listen
+app.get("/", (req, res) => res.send("Noon Scraper service - GET /search?q=<term>"));
+
 app.listen(PORT, () => {
-  // eslint-disable-next-line no-console
-  console.log(`Noon worker listening on port ${PORT}`);
+  console.log(`Noon scraper listening on ${PORT}`);
 });
