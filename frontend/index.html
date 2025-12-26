@@ -2,25 +2,36 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>UAE Price Hunter</title>
-  <link rel="stylesheet" href="style.css"/>
+  <title>Noon Price Hunter</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
   <header>
-    <h1>UAE Price Hunter 🇦🇪</h1>
-    <p>Compare prices from Noon & Amazon</p>
+    <h1>🛒 Noon Price Hunter</h1>
+    <p>UAE Smart Shopping (Live Prices)</p>
   </header>
 
   <main>
     <div class="search-box">
-      <input id="query" placeholder="Search iPhone, Samsung, TV..." />
+      <input
+        id="searchInput"
+        type="text"
+        placeholder="Search iPhone, Samsung, AirPods..."
+      />
       <button onclick="search()">Search</button>
     </div>
 
+    <div id="status" class="status"></div>
+
     <div id="results" class="results"></div>
   </main>
+
+  <footer>
+    <p>Powered by Noon Worker API</p>
+  </footer>
 
   <script src="script.js"></script>
 </body>
