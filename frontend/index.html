@@ -1,33 +1,27 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>UAE Price Hunter — Test</title>
-  <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0;background:#f7f8fb;color:#1b1f23}
-    .box{max-width:920px;padding:24px;border-radius:12px;background:#fff;box-shadow:0 6px 20px rgba(12,15,30,.06);text-align:center}
-    a{color:#0b69ff;text-decoration:none}
-    .muted{color:#666;font-size:14px;margin-top:8px}
-  </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>UAE Price Hunter</title>
+  <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
-  <div class="box">
-    <h1>UAE Price Hunter — Test Site</h1>
-    <p class="muted">If you see this page, GitHub Pages is working for this repo.</p>
 
-    <p><strong>Worker test (example):</strong></p>
-    <p><a id="workerLink" href="#" target="_blank">Open worker search for "iphone"</a></p>
+  <header>
+    <h1>UAE Price Hunter 🇦🇪</h1>
+    <p>Compare prices from Noon & Amazon</p>
+  </header>
 
-    <p class="muted">If the worker link is broken, check the worker URL / API key separately.</p>
-  </div>
+  <main>
+    <div class="search-box">
+      <input id="query" placeholder="Search iPhone, Samsung, TV..." />
+      <button onclick="search()">Search</button>
+    </div>
 
-  <script>
-    // Replace this URL with your worker test endpoint if different:
-    const workerUrl = 'https://ehabmalaeb12.github.io/noon-worker/'; // default (will be replaced below)
-    // Example worker endpoint — replace with your real worker domain if you have it:
-    const workerTest = 'https://shopping-worker.ehabmalaeb2.workers.dev/search?q=iphone';
-    document.getElementById('workerLink').href = workerTest;
-  </script>
+    <div id="results" class="results"></div>
+  </main>
+
+  <script src="script.js"></script>
 </body>
 </html>
