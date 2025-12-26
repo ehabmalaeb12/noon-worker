@@ -1,251 +1,169 @@
-// index.js
+// index.js (CommonJS)
 const express = require("express");
-const fetch = require("node-fetch");
-const { chromium } = require("playwright"); // uses playwright in Docker image
+
 const app = express();
+const PORT = process.env.PORT || 3000;
 
-const PORT = process.env.PORT || 8080;
-const CACHE_TTL = process.env.CACHE_TTL ? parseInt(process.env.CACHE_TTL) : 60; // seconds
-const USE_HEADLESS_PROXY = process.env.USE_HEADLESS_PROXY === "1"; // optional
+app.get("/health", (req, res) => res.json({ ok: true, ts: Date.now() }));
 
-// simple in-memory cache
-const cache = new Map();
-function setCache(key, value) {
-  cache.set(key, { value, ts: Date.now() });
-}
-function getCache(key) {
-  const entry = cache.get(key);
-  if (!entry) return null;
-  if ((Date.now() - entry.ts) / 1000 > CACHE_TTL) {
-    cache.delete(key);
-    return null;
-  }
-  return entry.value;
-}
-
-/**
- * Try Noon internal JSON endpoint (fast). If it returns a products array -> parse and return.
- * If not, fallback to headless Playwright render.
- */
 app.get("/search", async (req, res) => {
-  const q = (req.query.q || "").trim();
-  if (!q) {
+  const query = (req.query.q || "").trim();
+  if (!query) {
     return res.status(400).json({ error: "Missing query parameter ?q=" });
   }
 
-  const cacheKey = `noon:${q.toLowerCase()}`;
-  const cached = getCache(cacheKey);
-  if (cached) {
-    cached.debug.cached = true;
-    return res.json(cached);
-  }
+  // Primary attempt: Noon internal JSON endpoint (fast when accessible)
+  const noonApi =
+    "https://www.noon.com/_svc/search_v2?category=&limit=48&page=1&q=" +
+    encodeURIComponent(query) +
+    "&sort%5Bby%5D=relevance&sort%5Border%5D=desc";
 
   const debug = { tried: [], timestamp: new Date().toISOString() };
 
-  // 1) Try noon internal API (may be blocked or return HTML)
   try {
-    const apiUrl =
-      "https://www.noon.com/_svc/search_v2?category=&limit=48&page=1&q=" +
-      encodeURIComponent(q) +
-      "&sort%5Bby%5D=relevance&sort%5Border%5D=desc";
-
-    debug.tried.push({ method: "internal_api", url: apiUrl, ts: Date.now() });
-
-    const apiResp = await fetch(apiUrl, {
+    debug.tried.push({ method: "fetch_internal_api", url: noonApi, ts: Date.now() });
+    // Node (18+) in Playwright image provides global fetch — we use it
+    const r = await fetch(noonApi, {
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-        Accept: "application/json",
-        "Accept-Language": "en-AE,en;q=0.9",
-        Referer: "https://www.noon.com/",
-        Origin: "https://www.noon.com",
+        "user-agent":
+          "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile Safari/604.1",
+        accept: "application/json",
+        "accept-language": "en-US,en;q=0.9",
+        referer: "https://www.noon.com/",
+        origin: "https://www.noon.com",
       },
-      // 8s timeout
-      timeout: 8000,
+      // timeout behavior will be bound by platform; we catch slow responses below
     });
 
-    const contentType = apiResp.headers.get("content-type") || "";
-    const text = await apiResp.text();
+    const contentType = r.headers.get("content-type") || "";
+    debug.internal_status = r.status;
+    debug.internal_content_type = contentType;
 
-    // some endpoints respond with JSON string or HTML; try to parse
-    let jsonBody = null;
+    // If noon returns JSON with a products key, parse
     if (contentType.includes("application/json")) {
-      try { jsonBody = JSON.parse(text); } catch(e){ jsonBody = null; }
-    } else {
-      // try parse JSON inside text if exists
-      try {
-        jsonBody = JSON.parse(text);
-      } catch (e) {
-        jsonBody = null;
+      const data = await r.json();
+      debug.internal_json_keys = Object.keys(data || {});
+      const products = data?.products || data?.results || null;
+
+      if (Array.isArray(products) && products.length > 0) {
+        const results = products.map((p) => {
+          const title = p.name || p.title || null;
+          const price = (() => {
+            if (p.price && typeof p.price === "number") return p.price;
+            if (p.price && p.price.value) return Number(p.price.value) || null;
+            if (p.final_price) return Number(p.final_price) || null;
+            return null;
+          })();
+          const image = p.image_key
+            ? `https://z.nooncdn.com/products/tr:n-t_240/${p.image_key}.jpg`
+            : p.image || null;
+          const url = p.url ? `https://www.noon.com/uae-en/${p.url}` : null;
+          return {
+            store: "noon",
+            title,
+            price,
+            currency: "AED",
+            image,
+            url,
+            raw: p,
+          };
+        });
+
+        // Remove items without price if you want (the worker previously dropped them)
+        const filtered = results.filter((r) => r.price !== null && r.price !== undefined);
+
+        return res.json({
+          query,
+          count: filtered.length,
+          results: filtered,
+          debug,
+        });
+      } else {
+        debug.msg = "No products key / empty products array in JSON response";
       }
-    }
-
-    if (jsonBody && (jsonBody.products || jsonBody.data?.products)) {
-      const productList = jsonBody.products || jsonBody.data?.products || [];
-      const results = productList.map(p => {
-        // noon's product shape varies; attempt safe mappings
-        const priceObj = p.price || p.sale_price || p.regular_price || {};
-        const price = priceObj.value || p.price_including_tax || p.price_value || null;
-        const currency = priceObj.currency || "AED";
-        const imageKey = p.image_key || p.image || null;
-        const image = imageKey
-          ? (`https://z.nooncdn.com/products/tr:n-t_240/${imageKey}.jpg`)
-          : (p.images && p.images[0]) || null;
-        const url = p.url ? `https://www.noon.com/uae-en/${p.url}` : (p.productUrl || null);
-
-        return {
-          store: "Noon",
-          id: p.sku || p.product_id || p.id || (p.slug ? p.slug : null),
-          title: p.name || p.title || null,
-          price: price ? Number(price) : null,
-          currency,
-          image,
-          link: url,
-          raw: p
-        };
-      }).filter(r => r.title && (r.price || r.price === 0)); // remove items without title or price if you choose
-
-      const out = {
-        query: q,
-        count: results.length,
-        results,
-        debug: { ...debug, source: "internal_api" }
-      };
-      setCache(cacheKey, out);
-      return res.json(out);
     } else {
-      debug.tried.push({ method: "internal_api_no_products", htmlLength: text.length });
+      // content-type was not JSON (likely HTML or blocked)
+      debug.msg = "internal API did not return JSON";
+      debug.sampleHtmlLength = (await r.text()).length;
     }
   } catch (err) {
-    debug.tried.push({ method: "internal_api_error", message: err.message });
+    debug.internal_error = err && (err.message || String(err));
   }
 
-  // 2) FALLBACK: Playwright headless render (reliable)
-  // Note: Playwright launch is somewhat heavy; keep this as fallback only.
+  // Secondary attempt (playwright scraping) - only run when internal API fails
+  debug.tried.push({ method: "playwright_attempt_start", ts: Date.now() });
+
   try {
-    debug.tried.push({ method: "playwright_start", ts: Date.now() });
+    // require playwright lazily (playwright is installed in Docker image)
+    const playwright = require("playwright");
+    const browser = await playwright.chromium.launch({ args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+    const page = await browser.newPage({ userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36" });
 
-    const launchOptions = {
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-    };
+    const searchUrl = `https://www.noon.com/uae-en/search/?q=${encodeURIComponent(query)}`;
+    debug.playwright_url = searchUrl;
+    await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
 
-    // optional: if you have a proxy for headless, set env PROXY_URL and USE_HEADLESS_PROXY=1
-    if (USE_HEADLESS_PROXY && process.env.PROXY_URL) {
-      launchOptions.proxy = { server: process.env.PROXY_URL }; // e.g. http://username:pass@proxy:port
-    }
+    // Wait for product grid or a reasonable timeout
+    await page.waitForTimeout(2000); // short sleep; adjust as needed
 
-    const browser = await chromium.launch(launchOptions);
-    const context = await browser.newContext({
-      userAgent:
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1",
-      viewport: { width: 1200, height: 900 },
-      locale: "en-AE"
-    });
-    const page = await context.newPage();
+    // Basic product selector — we'll extract titles/prices/images/links
+    const items = await page.$$eval("[data-qa='product-card'], .productContainer, [data-testid='product-card']", (nodes) =>
+      nodes.map((n) => {
+        // pick common fields
+        const titleEl = n.querySelector("h3, .productTitle, .title, [data-qa='product-name']");
+        const priceEl = n.querySelector(".price, .final-price, [data-qa='product-price']");
+        const imgEl = n.querySelector("img");
+        const linkEl = n.querySelector("a");
 
-    const targetUrl = `https://www.noon.com/uae-en/search/?q=${encodeURIComponent(q)}`;
-    await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
-
-    // Wait for a product container; try multiple selectors to be robust
-    const selectors = [
-      '[data-qa="product-list-item"]',
-      '[data-qa="product-item"]',
-      '.productCard',
-      'div[itemprop="itemListElement"]',
-      '.sc-',
-      'a[href*="/p/"]'
-    ];
-
-    let productElements = [];
-    for (const sel of selectors) {
-      try {
-        await page.waitForSelector(sel, { timeout: 4000 });
-        productElements = await page.$$eval(sel, nodes => nodes.map(n => n.outerHTML));
-        if (productElements && productElements.length > 0) break;
-      } catch (e) {
-        // try next selector
-      }
-    }
-
-    // If still empty, grab generic product anchors
-    if (productElements.length === 0) {
-      productElements = await page.$$eval('a[href*="/p/"]', nodes => nodes.slice(0, 48).map(n => n.closest('div') ? n.closest('div').outerHTML : n.outerHTML));
-    }
-
-    // Extract product items by querying DOM directly for each visible product box
-    const products = await page.$$eval(
-      'a[href*="/p/"], [data-qa="product-list-item"], [data-qa="product-item"], .productCard',
-      anchors => {
-        const seen = new Set();
-        const out = [];
-        anchors.slice(0, 48).forEach(a => {
-          // get root element container
-          const box = a.closest('a') || a;
-          // title
-          const titleEl = box.querySelector('h3, h4, .productTitle, .sc-') || box.querySelector('[data-qa="product-name"]') || box.querySelector('img[alt]');
-          const title = titleEl ? (titleEl.innerText || titleEl.getAttribute('alt') || "").trim() : null;
-          // price
-          let price = null;
-          const pw = box.querySelector('.price, .salePrice, [data-qa="product-price"], .amount, .priceValue, .priceSpan');
-          if (pw) {
-            price = pw.innerText.replace(/[^\d.,]/g, '').replace(',', '.').trim();
-          } else {
-            // try find numbers in text
-            const txt = box.innerText || "";
-            const m = txt.match(/([\d{1,3},]*\d+(\.\d+)?)/);
-            price = m ? m[1].replace(',', '') : null;
-          }
-          // image
-          const img = box.querySelector('img') ? (box.querySelector('img').getAttribute('src') || box.querySelector('img').getAttribute('data-src')) : null;
-          // link
-          const link = (box.querySelector('a') && box.querySelector('a').href) || (box.href || null);
-
-          // an id candidate
-          const id = box.getAttribute('data-sku') || box.getAttribute('data-id') || (link ? link.split('/p/').pop() : null);
-
-          if (!title) return;
-          const numericPrice = price ? Number(price.toString().replace(/,/g, '').replace(/[^0-9.]/g, '')) : null;
-          const key = title + (numericPrice || '');
-          if (seen.has(key)) return;
-          seen.add(key);
-
-          out.push({
-            store: "Noon",
-            id,
-            title: title,
-            price: numericPrice,
-            currency: "AED",
-            image: img,
-            link
-          });
-        });
-        return out;
-      }
+        return {
+          title: titleEl ? titleEl.innerText.trim() : null,
+          priceText: priceEl ? priceEl.innerText.trim() : null,
+          image: imgEl ? imgEl.src : null,
+          url: linkEl ? linkEl.href : null,
+        };
+      })
     );
 
     await browser.close();
 
-    // Filter & normalize
-    const results = products.filter(p => p.title && (p.price || p.price === 0)).slice(0, 48);
+    // Try to parse prices (simple digits filter)
+    const parsed = items
+      .map((it) => {
+        if (!it.title) return null;
+        const priceMatch = (it.priceText || "").replace(/[,ٰ،]/g, "").match(/(\d+(\.\d+)?)/);
+        const price = priceMatch ? Number(priceMatch[0]) : null;
+        return {
+          store: "noon",
+          title: it.title,
+          price,
+          currency: price ? "AED" : null,
+          image: it.image,
+          url: it.url,
+        };
+      })
+      .filter(Boolean)
+      .filter((r) => r.price !== null);
 
-    const out = {
-      query: q,
-      count: results.length,
-      results,
-      debug: { ...debug, source: "playwright", targetUrl, found: results.length }
-    };
-
-    setCache(cacheKey, out);
-    return res.json(out);
+    debug.playwright_found = parsed.length;
+    return res.json({
+      query,
+      count: parsed.length,
+      results: parsed,
+      debug,
+    });
   } catch (err) {
-    debug.tried.push({ method: "playwright_error", message: err.message });
-    return res.status(500).json({ query: q, count: 0, results: [], debug });
+    debug.playwright_error = (err && (err.message || String(err))) || "playwright failed";
   }
+
+  // If both attempts failed, return the debug details so we can iterate
+  return res.json({
+    query,
+    count: 0,
+    results: [],
+    debug,
+  });
 });
 
-app.get("/", (req, res) => res.send("Noon Scraper service - GET /search?q=<term>"));
-
 app.listen(PORT, () => {
-  console.log(`Noon scraper listening on ${PORT}`);
+  console.log(`noon-worker listening on ${PORT}`);
 });
