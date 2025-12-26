@@ -1,88 +1,136 @@
-// === CONFIG ===
-// Put your worker/proxy URL here (no trailing path).
-// Example worker endpoints you used earlier:
-// https://shopping-worker.ehabmalaeb2.workers.dev
-// https://uae-price-proxy.ehabmalaeb2.workers.dev
-const WORKER_BASE = "https://shopping-worker.ehabmalaeb2.workers.dev";
+// script.js — aggregator frontend (copy to repo root)
+const AMAZON_WORKER = "https://uae-price-proxy.ehabmalaeb2.workers.dev/search?q=";
+// Replace above with your actual Amazon worker URL if different.
+//
+// Placeholder endpoints (set up later):
+const NOON_ENDPOINT = "https://noon-worker.onrender.com/search?q=";     // replace when Noon worker ready
+const SHARAF_ENDPOINT = "https://sharaf-worker.example.com/search?q="; // replace when Sharaf worker ready
 
-// === UI refs ===
 const input = document.getElementById("searchInput");
 const btn = document.getElementById("searchBtn");
-const status = document.getElementById("status");
-const results = document.getElementById("results");
+const loading = document.getElementById("loading");
+const resultsEl = document.getElementById("searchResults");
 
-btn.onclick = search;
-input.addEventListener("keydown", (e) => { if (e.key === "Enter") search(); });
+btn.addEventListener("click", run);
+input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
 
-async function search() {
-  const q = (input.value || "").trim();
-  results.innerHTML = "";
-  status.textContent = "";
+async function run() {
+  const q = input.value.trim();
+  resultsEl.innerHTML = "";
+  if (!q) return alert("Type a product name");
 
-  if (!q) {
-    status.textContent = "Please enter a search term.";
+  loading.style.display = "block";
+  const timeStart = Date.now();
+
+  // Query the stores in parallel.
+  const calls = [
+    fetchSafe(AMAZON_WORKER + encodeURIComponent(q)).then(r => ({ store: "amazon", data: r })).catch(e => ({ store: "amazon", error:e.message })),
+    // these will likely be empty until we deploy the workers/services:
+    fetchSafe(NOON_ENDPOINT + encodeURIComponent(q)).then(r => ({ store: "noon", data: r })).catch(e => ({ store: "noon", error:e.message })),
+    fetchSafe(SHARAF_ENDPOINT + encodeURIComponent(q)).then(r => ({ store: "sharaf", data: r })).catch(e => ({ store: "sharaf", error:e.message })),
+  ];
+
+  const responses = await Promise.all(calls);
+  loading.style.display = "none";
+
+  // Aggregate: build a flat list of product offers
+  const offers = [];
+
+  for (const res of responses) {
+    if (res.error) {
+      console.warn("Store error", res.store, res.error);
+      continue;
+    }
+    const payload = res.data;
+    if (!payload) continue;
+    const list = Array.isArray(payload.results) ? payload.results : payload.results || payload;
+    // Standardize shape
+    list.forEach(item => {
+      // Many sources use different field names. Normalize:
+      const normalized = {
+        id: item.id || item.asin || item.sku || item.url || (item.link||"").split("/dp/")[1] || Math.random().toString(36).slice(2,9),
+        title: item.title || item.name || item.title || null,
+        price: item.price ? Number(item.price) : (item.price_raw ? Number(item.price_raw) : null),
+        currency: item.currency || "AED",
+        image: item.image || item.image_link || item.image_url || null,
+        link: item.link || item.url || item.product_url || null,
+        store: (item.store || res.store || "unknown").toString(),
+      };
+      if (normalized.price) offers.push(normalized);
+    });
+  }
+
+  if (offers.length === 0) {
+    resultsEl.innerHTML = "<p>No offers found across stores.</p>";
     return;
   }
 
-  status.textContent = "Searching…";
-  try {
-    const url = `${WORKER_BASE}/search?q=${encodeURIComponent(q)}`;
-    const res = await fetch(url, { mode: "cors" });
+  // Group by normalized title (simple approach: lowercased title trimmed)
+  const groups = {};
+  offers.forEach(o => {
+    const key = (o.title || "").toLowerCase().replace(/\s+/g,' ').slice(0,120) || o.id;
+    groups[key] = groups[key] || [];
+    groups[key].push(o);
+  });
 
-    if (!res.ok) {
-      const txt = await res.text().catch(()=>"");
-      status.textContent = `API error ${res.status}: ${txt || res.statusText}`;
-      return;
-    }
+  // Render groups, showing best price badge
+  resultsEl.innerHTML = "";
+  Object.keys(groups).forEach(k => {
+    const list = groups[k];
+    // find best price
+    const best = list.reduce((a,b) => (b.price < a.price ? b : a), list[0]);
 
-    const json = await res.json().catch(() => null);
-    if (!json) {
-      status.textContent = "Invalid JSON from API.";
-      return;
-    }
+    const groupDiv = document.createElement("div");
+    groupDiv.className = "group";
 
-    // Accept both shapes:
-    // 1) array: [ {title, price, image, link, store}, ... ]
-    // 2) object: { query, count, results: [...] }
-    let items = [];
-    if (Array.isArray(json)) items = json;
-    else if (Array.isArray(json.results)) items = json.results;
-    else if (Array.isArray(json.data)) items = json.data;
-    else {
-      // fallback: try to find the first array inside the object
-      for (const v of Object.values(json)) if (Array.isArray(v)) { items = v; break; }
-    }
+    const title = document.createElement("h3");
+    title.textContent = best.title || "Product";
+    groupDiv.appendChild(title);
 
-    if (!items || items.length === 0) {
-      status.textContent = "No results found.";
-      return;
-    }
-
-    status.textContent = `Found ${items.length} products.`;
-
-    items.forEach(i => {
-      const title = i.title || i.name || i.title_en || "";
-      const price = i.price === undefined ? (i.final_price || i.price_value || "") : i.price;
-      const image = (i.image && i.image.startsWith("http")) ? i.image : (i.image ? i.image : "");
-      const link = i.link || i.url || i.product_link || "#";
-      const store = i.store || i.vendor || "store";
-
+    list.forEach(o => {
       const card = document.createElement("div");
-      card.className = "card";
-      card.innerHTML = `
-        <img src="${image || 'https://via.placeholder.com/320x200?text=No+Image'}" alt="">
-        <h3>${escapeHtml(title)}</h3>
-        <div class="price">${price ? price + " AED" : ""}</div>
-        <a href="${link}" target="_blank" rel="noopener noreferrer">View on ${escapeHtml(store)}</a>
-      `;
-      results.appendChild(card);
+      card.className = "product-card";
+
+      const img = document.createElement("img");
+      img.src = o.image || "https://images.unsplash.com/photo-1556656793-08538906a9f8?w=400";
+      img.onerror = () => img.src = "https://images.unsplash.com/photo-1556656793-08538906a9f8?w=400";
+      card.appendChild(img);
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.innerHTML = `<div class="store">${o.store}</div>
+                        <div>${o.title ? o.title.slice(0,120) : ""}</div>
+                        <div class="price">${o.price ? o.price+" AED" : "—"}</div>
+                        <div style="margin-top:8px;"> <a href="${o.link}" target="_blank">Buy on ${o.store}</a> </div>`;
+
+      if (o.id === best.id && o.price === best.price) {
+        const bestBadge = document.createElement("div");
+        bestBadge.className = "best";
+        bestBadge.textContent = "Best";
+        meta.appendChild(bestBadge);
+      }
+
+      card.appendChild(meta);
+      groupDiv.appendChild(card);
     });
 
-  } catch (err) {
-    console.error(err);
-    // Common cause: CORS blocked the request
-    status.textContent = "Error fetching API. Check console. If you see a CORS error, add CORS headers to the worker.";
-  }
+    resultsEl.appendChild(groupDiv);
+  });
+
+  const took = Math.round((Date.now()-timeStart)/10)/100;
+  const footer = document.createElement("div");
+  footer.style.fontSize="13px";
+  footer.style.color="#666";
+  footer.style.marginTop="6px";
+  footer.textContent = `Aggregated ${offers.length} offers across ${responses.length} stores • ${took}s`;
+  resultsEl.appendChild(footer);
 }
 
-function escapeHtml(s){ return String(s||"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+async function fetchSafe(url) {
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) {
+    const txt = await res.text().catch(()=>null);
+    throw new Error(`HTTP ${res.status} ${res.statusText} ${txt? (" - "+txt.slice(0,200)) : ""}`);
+  }
+  return res.json();
+}
