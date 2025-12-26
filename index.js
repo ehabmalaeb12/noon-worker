@@ -1,5 +1,5 @@
-import express from "express";
-import fetch from "node-fetch";
+const express = require("express");
+const fetch = require("node-fetch");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,30 +23,20 @@ app.get("/search", async (req, res) => {
     `&url=${encodeURIComponent(targetUrl)}` +
     `&render=true&country_code=ae`;
 
-  const start = Date.now();
-
   try {
-    const response = await fetch(scraperUrl, { timeout: 60000 });
+    const response = await fetch(scraperUrl);
     const html = await response.text();
 
-    // 🔑 Extract NEXT_DATA
     const match = html.match(
       /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/
     );
 
     if (!match) {
-      return res.json({
-        query,
-        count: 0,
-        results: [],
-        error: "NEXT_DATA not found"
-      });
+      return res.json({ query, count: 0, results: [], error: "NEXT_DATA not found" });
     }
 
     const data = JSON.parse(match[1]);
-
-    const products =
-      data?.props?.pageProps?.searchResults?.hits || [];
+    const products = data?.props?.pageProps?.searchResults?.hits || [];
 
     const results = products.slice(0, 20).map(p => ({
       store: "noon",
@@ -62,17 +52,11 @@ app.get("/search", async (req, res) => {
     res.json({
       query,
       count: results.length,
-      results,
-      debug: {
-        fetch_time_ms: Date.now() - start,
-        productsFound: products.length
-      }
+      results
     });
 
   } catch (err) {
-    res.status(500).json({
-      error: err.message
-    });
+    res.status(500).json({ error: err.message });
   }
 });
 
