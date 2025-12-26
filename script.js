@@ -1,5 +1,5 @@
 // script.js — aggregator frontend (copy to repo root)
-const AMAZON_WORKER = "https://uae-price-proxy.ehabmalaeb2.workers.dev/search?q=";
+const AMAZON_WORKER = "https://shopping-worker.ehabmalaeb2.workers.dev/search?q=";
 // Replace above with your actual Amazon worker URL if different.
 //
 // Placeholder endpoints (set up later):
