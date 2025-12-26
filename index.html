@@ -1,39 +1,95 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>UAE Price Hunter — Test</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UAE Price Hunter</title>
+
   <style>
-    body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial; padding: 18px; max-width: 980px; margin: 0 auto; }
-    header { display:flex; gap:12px; align-items:center; margin-bottom:12px; }
-    input[type="text"]{ padding:10px; flex:1; font-size:16px; border-radius:8px; border:1px solid #ddd; }
-    button{ padding:10px 14px; font-size:16px; border-radius:8px; cursor:pointer; }
-    .product-card { border:1px solid #eee; padding:12px; border-radius:10px; display:flex; gap:12px; align-items:flex-start; margin-bottom:12px; }
-    .product-card img{ width:96px; height:96px; object-fit:cover; border-radius:6px; }
-    .meta{ flex:1 }
-    .store { font-size:12px; color:#666; margin-bottom:6px; }
-    .price { font-weight:700; margin-top:8px; }
-    .best { background: #0f9d58; color:white; padding:6px 8px; border-radius:6px; font-size:12px; display:inline-block; }
-    #loading{ display:none; margin-bottom:12px; }
-    .group { margin-bottom:24px; }
-    .group h3{ margin:0 0 8px 0; font-size:18px; }
+    body {
+      font-family: Arial, sans-serif;
+      background: #f7f7f7;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h1 {
+      text-align: center;
+    }
+
+    .search-box {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    input {
+      width: 70%;
+      max-width: 400px;
+      padding: 10px;
+      font-size: 16px;
+    }
+
+    button {
+      padding: 10px 16px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    #results {
+      max-width: 900px;
+      margin: auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 15px;
+    }
+
+    .card {
+      background: white;
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+
+    .card img {
+      max-width: 100%;
+      height: 150px;
+      object-fit: contain;
+    }
+
+    .price {
+      font-weight: bold;
+      margin: 5px 0;
+    }
+
+    a {
+      display: inline-block;
+      margin-top: 6px;
+      text-decoration: none;
+      color: white;
+      background: #ff9900;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 14px;
+    }
   </style>
 </head>
-<body>
-  <header>
-    <h1 style="margin:0">UAE Price Hunter — Test</h1>
-  </header>
 
-  <div style="display:flex; gap:8px; margin-bottom:12px;">
-    <input id="searchInput" type="text" placeholder="Search product (e.g. iphone)" value="iphone" />
+<body>
+
+  <h1>UAE Price Hunter — Test</h1>
+
+  <div class="search-box">
+    <input id="searchInput" type="text" placeholder="Search product (iphone, creatine…)" />
     <button id="searchBtn">Search</button>
   </div>
 
-  <div id="loading">Searching stores…</div>
+  <div id="results"></div>
 
-  <div id="searchResults"></div>
-
+  <!-- IMPORTANT: script must be LAST -->
   <script src="script.js"></script>
+
 </body>
 </html>
