@@ -5,28 +5,28 @@ async function search() {
   const q = document.getElementById("query").value.trim();
   if (!q) return;
 
-  document.getElementById("status").innerText = "Searching...";
-  document.getElementById("results").innerHTML = "";
+  const resultsDiv = document.getElementById("results");
+  resultsDiv.innerHTML = "Loading...";
 
   try {
     const res = await fetch(API + encodeURIComponent(q));
     const data = await res.json();
 
-    document.getElementById("status").innerText =
-      `${data.count} results found`;
+    if (!data.results.length) {
+      resultsDiv.innerHTML = "No results found.";
+      return;
+    }
 
-    data.results.forEach(p => {
-      document.getElementById("results").innerHTML += `
-        <div class="card">
-          <img src="${p.image}" />
-          <h3>${p.title}</h3>
-          <p class="price">${p.price} ${p.currency}</p>
-          <span class="store">${p.store}</span>
-        </div>
-      `;
-    });
+    resultsDiv.innerHTML = data.results.map(p => `
+      <div class="card">
+        <img src="${p.image}" />
+        <h3>${p.title}</h3>
+        <p class="price">${p.price} ${p.currency}</p>
+        <span class="store">${p.store}</span>
+      </div>
+    `).join("");
 
   } catch (e) {
-    document.getElementById("status").innerText = "Error loading results";
+    resultsDiv.innerHTML = "Error loading results.";
   }
 }
