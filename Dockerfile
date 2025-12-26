@@ -1,11 +1,21 @@
-FROM mcr.microsoft.com/playwright:v1.41.2-jammy
+# Dockerfile
+FROM mcr.microsoft.com/playwright:focal
 
-WORKDIR /app
+WORKDIR /usr/src/app
 
+# Copy package files first to use cache
 COPY package*.json ./
-RUN npm install --production
 
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy app code
 COPY . .
 
-EXPOSE 3000
+# Ensure playwright browsers installed (redundant but safe)
+RUN npx playwright install --with-deps
+
+ENV PORT 10000
+EXPOSE 10000
+
 CMD ["node", "index.js"]
