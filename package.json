@@ -1,0 +1,13 @@
+{
+  "name": "noon-worker",
+  "version": "1.0.0",
+  "description": "Noon UAE price scraper microservice",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "node-fetch": "^3.3.2"
+  }
+}
