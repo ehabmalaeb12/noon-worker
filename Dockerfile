@@ -1,21 +1,20 @@
-# Dockerfile
-FROM mcr.microsoft.com/playwright:focal
+# Playwright base image (includes Chromium + dependencies)
+FROM mcr.microsoft.com/playwright:v1.49.0-jammy
 
-WORKDIR /usr/src/app
+# Set working directory
+WORKDIR /app
 
-# Copy package files first to use cache
+# Copy package files first (better caching)
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --only=production
+RUN npm install
 
-# Copy app code
+# Copy the rest of the app
 COPY . .
 
-# Ensure playwright browsers installed (redundant but safe)
-RUN npx playwright install --with-deps
+# Expose port (Render uses $PORT)
+EXPOSE 3000
 
-ENV PORT 10000
-EXPOSE 10000
-
+# Start the server
 CMD ["node", "index.js"]
