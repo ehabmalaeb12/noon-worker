@@ -1,32 +1,46 @@
-const API =
+const API_BASE =
   "https://shopping-worker.ehabmalaeb2.workers.dev/search?q=";
 
 async function search() {
-  const q = document.getElementById("query").value.trim();
-  if (!q) return;
-
+  const query = document.getElementById("searchInput").value.trim();
   const resultsDiv = document.getElementById("results");
-  resultsDiv.innerHTML = "Loading...";
+  const statusDiv = document.getElementById("status");
+
+  if (!query) {
+    alert("Please enter a search term");
+    return;
+  }
+
+  resultsDiv.innerHTML = "";
+  statusDiv.textContent = "🔍 Searching...";
 
   try {
-    const res = await fetch(API + encodeURIComponent(q));
-    const data = await res.json();
+    const response = await fetch(API_BASE + encodeURIComponent(query));
+    const data = await response.json();
 
-    if (!data.results.length) {
-      resultsDiv.innerHTML = "No results found.";
+    if (!data || data.length === 0) {
+      statusDiv.textContent = "❌ No results found";
       return;
     }
 
-    resultsDiv.innerHTML = data.results.map(p => `
-      <div class="card">
-        <img src="${p.image}" />
-        <h3>${p.title}</h3>
-        <p class="price">${p.price} ${p.currency}</p>
-        <span class="store">${p.store}</span>
-      </div>
-    `).join("");
+    statusDiv.textContent = `✅ Found ${data.length} products`;
 
-  } catch (e) {
-    resultsDiv.innerHTML = "Error loading results.";
+    data.forEach(item => {
+      const card = document.createElement("div");
+      card.className = "card";
+
+      card.innerHTML = `
+        <img src="${item.image}" alt="">
+        <h3>${item.title}</h3>
+        <div class="price">${item.price}</div>
+        <a href="${item.link}" target="_blank">View on ${item.store}</a>
+      `;
+
+      resultsDiv.appendChild(card);
+    });
+
+  } catch (error) {
+    console.error(error);
+    statusDiv.textContent = "⚠️ Error fetching data";
   }
 }
