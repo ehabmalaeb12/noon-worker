@@ -1,45 +1,54 @@
-const API =
-  "https://shopping-worker.ehabmalaeb2.workers.dev/search?q=";
+const API_BASE =
+  "https://shopping-worker.ehabmalaeb2.workers.dev/search";
+
+const searchInput = document.getElementById("searchInput");
+const searchBtn = document.getElementById("searchBtn");
+const resultsDiv = document.getElementById("results");
+
+searchBtn.addEventListener("click", search);
+searchInput.addEventListener("keydown", e => {
+  if (e.key === "Enter") search();
+});
 
 async function search() {
-  const q = document.getElementById("searchInput").value.trim();
-  if (!q) return;
+  const query = searchInput.value.trim();
+  if (!query) return;
 
-  document.getElementById("results").innerHTML = "Loading…";
+  resultsDiv.innerHTML = `<p>🔎 Searching for <b>${query}</b>...</p>`;
 
-  const res = await fetch(API + encodeURIComponent(q));
-  const data = await res.json();
+  try {
+    const res = await fetch(`${API_BASE}?q=${encodeURIComponent(query)}`);
+    const data = await res.json();
 
-  if (!data.results || !data.results.length) {
-    document.getElementById("results").innerHTML =
-      "<p>No results found</p>";
-    return;
-  }
-
-  const grouped = {};
-  for (const item of data.results) {
-    if (!grouped[item.store]) grouped[item.store] = [];
-    grouped[item.store].push(item);
-  }
-
-  let html = "";
-
-  for (const store in grouped) {
-    html += `<h2>${store}</h2><div class="store">`;
-
-    for (const p of grouped[store]) {
-      html += `
-        <div class="card">
-          <img src="${p.image}" />
-          <h3>${p.title}</h3>
-          <p class="price">${p.price} AED</p>
-          <a href="${p.link}" target="_blank">Buy</a>
-        </div>
-      `;
+    if (!data.results || data.results.length === 0) {
+      resultsDiv.innerHTML = `<p>❌ No results found.</p>`;
+      return;
     }
 
-    html += "</div>";
+    renderResults(data.results);
+  } catch (err) {
+    resultsDiv.innerHTML = `<p>⚠️ Error loading results</p>`;
+    console.error(err);
   }
+}
 
-  document.getElementById("results").innerHTML = html;
+function renderResults(items) {
+  resultsDiv.innerHTML = "";
+
+  items.forEach(item => {
+    const card = document.createElement("div");
+    card.className = "product-card";
+
+    card.innerHTML = `
+      <img src="${item.image || ""}" alt="${item.title || "product"}" />
+      <h3>${item.title || "Unknown product"}</h3>
+      <p class="price">
+        ${item.price ? item.price + " " + item.currency : "Price unavailable"}
+      </p>
+      <p class="store">${item.store}</p>
+      <a href="${item.link}" target="_blank">View product</a>
+    `;
+
+    resultsDiv.appendChild(card);
+  });
 }
