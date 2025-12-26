@@ -1,6 +1,8 @@
 {
   "name": "noon-worker",
-  "type": "module",
+  "version": "1.0.0",
+  "description": "Noon search worker",
+  "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
