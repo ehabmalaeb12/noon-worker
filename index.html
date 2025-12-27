@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>UAE Price Hunter — Compare</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="topbar">
@@ -13,15 +13,25 @@
   </header>
 
   <main class="container">
-    <section class="search-row">
-      <input id="searchInput" placeholder="Search product (e.g. iphone)" value="iphone">
+    <div class="searchRow">
+      <input id="searchInput" placeholder="Search product (e.g. iphone)" value="iphone" />
       <button id="searchBtn">Search</button>
-    </section>
+    </div>
 
-    <div id="loading" class="loading" aria-hidden="true">Searching stores…</div>
+    <div class="controls">
+      <label><input type="checkbox" id="useAmazon" checked /> Amazon</label>
+      <label><input type="checkbox" id="useSharaf" checked /> Sharaf DG</label>
+    </div>
 
-    <section id="searchResults" class="results-grid" aria-live="polite"></section>
+    <div id="loading" class="loading" hidden>Searching stores…</div>
+    <div id="message" class="message"></div>
+
+    <div id="results" class="grid"></div>
   </main>
+
+  <footer class="footer">
+    Built for demo — data from workers (Amazon & Sharaf).
+  </footer>
 
   <script src="script.js"></script>
 </body>
