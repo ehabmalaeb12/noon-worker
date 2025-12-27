@@ -1,216 +1,353 @@
-// ---------------- CONFIG - update if your worker domains differ ----------------
-const AMAZON_SEARCH = "https://shopping-worker.ehabmalaeb2.workers.dev/search?q=";
-const SHARAF_SEARCH  = "https://sharaf-worker.ehabmalaeb2.workers.dev/search?q=";
-const SHARAF_PRODUCT = "https://sharaf-worker.ehabmalaeb2.workers.dev/product?url=";
-// SerpApi key (fallback). You gave: 80742aa2857...
-const SERPAPI_KEY = "80742aa2857d3cbb676946278ff2693d787d68fa9d0187dfcba8a96e0be36a70";
-// ------------------------------------------------------------------------------
+// script.js — fetches Amazon worker + Sharaf worker, merges and groups results
+const AMAZON_WORKER = 'https://uae-price-proxy.ehabmalaeb2.workers.dev/search?q=';
+const SHARAF_SEARCH = 'https://sharaf-worker.ehabmalaeb2.workers.dev/search?q=';
+const SHARAF_PRODUCT = 'https://sharaf-worker.ehabmalaeb2.workers.dev/product?url=';
 
-const searchInput = document.getElementById("searchInput");
-const searchBtn = document.getElementById("searchBtn");
-const resultsEl = document.getElementById("searchResults");
-const loadingEl = document.getElementById("loading");
+const searchInput = document.getElementById('searchInput');
+const searchBtn = document.getElementById('searchBtn');
+const loadingEl = document.getElementById('loading');
+const resultsEl = document.getElementById('searchResults');
+const dealsSection = document.getElementById('bestDeals');
+const dealsGrid = document.getElementById('dealsGrid');
+const errorEl = document.getElementById('error');
+const basketCountEl = document.getElementById('basketCount');
+const totalPointsEl = document.getElementById('totalPoints');
 
-// debug panel
-const dbg = document.createElement("pre");
-dbg.style.background = "#fff";
-dbg.style.padding = "8px";
-dbg.style.borderRadius = "8px";
-dbg.style.marginTop = "12px";
-dbg.style.fontSize = "12px";
-dbg.style.maxHeight = "160px";
-dbg.style.overflow = "auto";
-resultsEl.parentNode.insertBefore(dbg, resultsEl.nextSibling);
+let appState = { basket: [], points: 0 };
+loadState();
+updateUI();
 
-searchBtn.addEventListener("click", runSearch);
-searchInput.addEventListener("keydown", e => { if (e.key === "Enter") runSearch(); });
+searchBtn.addEventListener('click', () => runSearch());
+searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') runSearch(); });
 
-function logDebug(...a){ 
-  console.log(...a);
-  try { dbg.textContent += a.map(x => (typeof x === 'string' ? x : JSON.stringify(x,null,2))).join(" ") + "\n\n"; }
-  catch(e){}
+function showLoading(show) {
+  loadingEl.style.display = show ? 'block' : 'none';
+  errorEl.style.display = 'none';
 }
 
-async function timeoutFetch(url, opts={}, ms=15000) {
-  const controller = new AbortController();
-  const id = setTimeout(()=>controller.abort(), ms);
+/* ------------ Main search flow ------------- */
+async function runSearch() {
+  const q = (searchInput.value || '').trim();
+  if (!q) { error('Please enter a product name'); return; }
+
+  resultsEl.innerHTML = '';
+  dealsGrid.innerHTML = '';
+  dealsSection.style.display = 'none';
+  showLoading(true);
+
   try {
-    const res = await fetch(url, {...opts, signal: controller.signal});
-    return res;
+    // Fetch Amazon and Sharaf search concurrently
+    const [amazonResp, sharafResp] = await Promise.allSettled([
+      fetchJsonWithTimeout(AMAZON_WORKER + encodeURIComponent(q), 25000),
+      fetchJsonWithTimeout(SHARAF_SEARCH + encodeURIComponent(q), 25000)
+    ]);
+
+    const amazonProducts = (amazonResp.status === 'fulfilled' && Array.isArray(amazonResp.value.results))
+      ? amazonResp.value.results
+      : [];
+
+    const sharafSearchResults = (sharafResp.status === 'fulfilled' && Array.isArray(sharafResp.value.results))
+      ? sharafResp.value.results
+      : [];
+
+    // From Sharaf search get product pages then call /product endpoint to get price/title/image
+    const sharafProducts = await fetchSharafProductsFromSearch(sharafSearchResults, 10);
+
+    // Normalize and merge
+    const normalized = normalizeProducts(amazonProducts, sharafProducts);
+
+    if (normalized.length === 0) {
+      error('No priced products found.');
+      showLoading(false);
+      return;
+    }
+
+    // Group products by simple model key and render
+    const groups = groupByModel(normalized);
+    renderGroups(groups);
+
+    // Show best deals (top 6 cheapest across all)
+    renderBestDeals(normalized);
+
+  } catch (err) {
+    console.error(err);
+    error('Search failed — see console for details');
+  } finally {
+    showLoading(false);
+  }
+}
+
+/* ---------- Helpers: fetch with timeout ---------- */
+async function fetchJsonWithTimeout(url, ms = 20000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: controller.signal, mode: 'cors' });
+    const json = await res.json();
+    clearTimeout(id);
+    return json;
   } finally { clearTimeout(id); }
 }
 
-function normalizeTitle(s=""){
-  return (s||"").toString().toLowerCase().replace(/\s+/g," ").replace(/[^a-z0-9 ]/g,"").trim();
-}
+/* ---------- Sharaf product fetch (limited concurrency) ---------- */
+async function fetchSharafProductsFromSearch(searchResults, limit = 8) {
+  if (!Array.isArray(searchResults) || searchResults.length === 0) return [];
+  const urls = searchResults.map(r => r.link).filter(Boolean).slice(0, limit);
 
-async function runSearch(){
-  const q = (searchInput.value || "").trim();
-  resultsEl.innerHTML = "";
-  dbg.textContent = "";
-  if(!q){ resultsEl.innerHTML = "<p class='muted'>Enter a product name</p>"; return; }
-  loadingEl.hidden = false;
-  logDebug(`Start search: "${q}"`);
-
-  // 1) Start Amazon search + Sharaf search in parallel
-  let amazonItems = [], sharafSearchItems = [];
-  try {
-    const [aRes, sRes] = await Promise.allSettled([
-      timeoutFetch(AMAZON_SEARCH + encodeURIComponent(q), {headers:{'Accept':'application/json'}}, 15000),
-      timeoutFetch(SHARAF_SEARCH  + encodeURIComponent(q), {headers:{'Accept':'application/json'}}, 15000)
-    ]);
-
-    if(aRes.status === 'fulfilled'){
-      try {
-        const j = await aRes.value.json();
-        amazonItems = Array.isArray(j.results) ? j.results.filter(r => r && r.price) : [];
-        logDebug("Amazon returned:", amazonItems.length);
-      } catch(e){ logDebug("Amazon parse error", e.message); }
-    } else logDebug("Amazon fetch error", aRes.reason && aRes.reason.message);
-
-    if(sRes.status === 'fulfilled'){
-      try {
-        const j = await sRes.value.json();
-        sharafSearchItems = Array.isArray(j.results) ? j.results : [];
-        logDebug("Sharaf worker search returned count:", sharafSearchItems.length);
-      } catch(e){ logDebug("Sharaf search parse error", e.message); }
-    } else logDebug("Sharaf search fetch error", sRes.reason && sRes.reason.message);
-
-  } catch(e){
-    logDebug("Parallel fetch error", e.message);
-  }
-
-  // 2) If Sharaf search already contains priced items, use them
-  let sharafPriced = sharafSearchItems.filter(i => i && typeof i.price === 'number');
-  logDebug("Sharaf priced from worker:", sharafPriced.length);
-
-  // 3) If no priced Sharaf items, attempt to get product links and hydrate via /product
-  let hydratedSharaf = [];
-  if(sharafPriced.length > 0){
-    hydratedSharaf = sharafPriced;
-  } else {
-    // collect links from sharafSearchItems (if any)
-    let links = (sharafSearchItems || []).map(i => i.link || i.url).filter(Boolean);
-    links = [...new Set(links)];
-
-    // fallback: use SerpApi to find sharaf product pages (if no links)
-    if(links.length === 0){
-      try {
-        logDebug("No links from sharaf search worker — trying SerpApi fallback");
-        const serpUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(q + " site:uae.sharafdg.com")}&location=United+Arab+Emirates&hl=en&gl=ae&api_key=${SERPAPI_KEY}`;
-        const serpResp = await timeoutFetch(serpUrl, {}, 12000);
-        const serpJson = await serpResp.json();
-        const candidates = (serpJson.organic_results || []).concat(serpJson.shopping_results || []);
-        for(const c of candidates){
-          if(c.link && c.link.includes("sharafdg")) links.push(c.link);
-          else if(c.source && c.source.includes("sharafdg") && c.link) links.push(c.link);
-        }
-        links = [...new Set(links)].slice(0, 10);
-        logDebug("SerpApi found links:", links.length);
-      } catch(err){
-        logDebug("SerpApi fallback failed:", err && err.message);
-      }
-    } else {
-      logDebug("Using links provided by sharaf-worker:", links.length);
-    }
-
-    // hydrate up to 8 links via your /product endpoint with concurrency limit
-    if(links.length){
-      const max = 8;
-      const toHydrate = links.slice(0, max);
-      logDebug("Hydrating Sharaf product pages count:", toHydrate.length);
-      hydratedSharaf = await promisePool(toHydrate, async (u) => {
-        try {
-          const r = await timeoutFetch(SHARAF_PRODUCT + encodeURIComponent(u), {headers:{'Accept':'application/json'}}, 12000);
-          return await r.json();
-        } catch(err) {
-          logDebug("Hydrate failed:", u, err && err.message);
+  // simple concurrency limiter (batch size 4)
+  const batchSize = 4;
+  const out = [];
+  for (let i = 0; i < urls.length; i += batchSize) {
+    const batch = urls.slice(i, i + batchSize).map(u =>
+      fetchJsonWithTimeout(SHARAF_PRODUCT + encodeURIComponent(u), 20000)
+        .then(j => {
+          if (j && j.price != null) return j;
           return null;
-        }
-      }, 4);
-      hydratedSharaf = (hydratedSharaf || []).filter(Boolean).filter(i => i.price !== null && i.price !== undefined);
-      logDebug("Hydrated sharaf items with price:", hydratedSharaf.length);
-    } else {
-      logDebug("No product links to hydrate for Sharaf");
-    }
+        })
+        .catch(err => { console.warn('sharaf product fetch fail', err); return null; })
+    );
+    const res = await Promise.all(batch);
+    res.forEach(r => { if (r) out.push(r); });
   }
-
-  // 4) Combine and dedupe by normalized title (best-effort)
-  const all = [];
-  (amazonItems || []).forEach(it => { if(it && it.price) all.push({...it, store:"Amazon.ae"}); });
-  (hydratedSharaf || []).forEach(it => { if(it && it.price) all.push({...it, store:"SharafDG"}); });
-
-  if(all.length === 0){
-    resultsEl.innerHTML = `<p class="muted">No priced products found across Amazon & Sharaf for "${q}".<br/>See debug below for details.</p>`;
-    loadingEl.hidden = true;
-    return;
-  }
-
-  renderGrouped(all);
-  loadingEl.hidden = true;
+  return out;
 }
 
+/* ---------- Normalize Amazon & Sharaf product formats ---------- */
+function normalizeProducts(amazonArr = [], sharafArr = []) {
+  const norm = [];
 
-// small concurrency pool
-async function promisePool(items, mapper, concurrency = 3){
-  const results = new Array(items.length);
-  let idx = 0;
-  const workers = new Array(concurrency).fill(0).map(async ()=>{
-    while(true){
-      const i = idx++;
-      if(i >= items.length) break;
-      try { results[i] = await mapper(items[i]); }
-      catch(e){ results[i] = null; }
-    }
-  });
-  await Promise.all(workers);
-  return results;
-}
-
-function renderGrouped(items){
-  resultsEl.innerHTML = "";
-  // group by normalized title
-  const groups = {};
-  items.forEach(p => {
-    const title = p.title || p.name || p.title || p.asin || (p.link || p.url) || "Unknown";
-    const key = normalizeTitle(title);
-    if(!groups[key]) groups[key] = { title: title, items: [] };
-    groups[key].items.push(p);
-  });
-
-  Object.values(groups).forEach(g => {
-    // find numeric priced items
-    const priced = g.items.filter(x => typeof x.price === "number");
-    if(!priced.length) return;
-    const best = Math.min(...priced.map(p=>p.price));
-
-    const card = document.createElement("div");
-    card.className = "card";
-
-    const h = document.createElement("h3"); h.textContent = g.title; card.appendChild(h);
-
-    const thumb = g.items.find(i => i.image && i.image.startsWith("http"));
-    if(thumb){
-      const img = document.createElement("img"); img.src = thumb.image; img.alt = g.title; card.appendChild(img);
-    }
-
-    g.items.forEach(it => {
-      const row = document.createElement("div"); row.className = "store-row";
-      const left = document.createElement("div");
-      left.innerHTML = `<strong>${it.store || "Store"}</strong> · AED ${ (typeof it.price === "number") ? it.price : "—" }`;
-      if(typeof it.price === "number" && it.price === best){
-        const badge = document.createElement("span"); badge.className = "badge"; badge.textContent = "Best Price";
-        left.appendChild(document.createTextNode(" "));
-        left.appendChild(badge);
-      }
-      const right = document.createElement("div");
-      const a = document.createElement("a"); a.href = it.link || it.url || "#"; a.target = "_blank";
-      const btn = document.createElement("button"); btn.className = "viewBtn"; btn.textContent = "Buy";
-      a.appendChild(btn); right.appendChild(a);
-      row.appendChild(left); row.appendChild(right);
-      card.appendChild(row);
+  // Amazon format: {asin, title, price, image, link, store}
+  for (const a of amazonArr) {
+    const price = numeric(a.price);
+    if (!isFinite(price)) continue; // skip null/na
+    norm.push({
+      id: a.asin || a.id || a.link,
+      title: a.title || a.name || a.asin || '',
+      price,
+      image: a.image || a.img || null,
+      link: a.link || a.url || null,
+      store: a.store || 'Amazon.ae',
+      raw: a
     });
+  }
+
+  // Sharaf format: {title, price, image, link, store}
+  for (const s of sharafArr) {
+    const price = numeric(s.price);
+    if (!isFinite(price)) continue;
+    norm.push({
+      id: s.link,
+      title: s.title || s.name || '',
+      price,
+      image: s.image || null,
+      link: s.link || null,
+      store: s.store || 'SharafDG',
+      raw: s
+    });
+  }
+
+  return norm;
+}
+
+/* ---------- Group by model (naive normalization) ---------- */
+function modelKeyForTitle(title) {
+  if (!title) return '';
+  // lowercase, remove non-alphanum (except spaces), collapse spaces, take first 6 words
+  const cleaned = title.toLowerCase().replace(/[^a-z0-9\s]/gi, ' ').replace(/\s+/g, ' ').trim();
+  const words = cleaned.split(' ').filter(Boolean);
+  return words.slice(0, 6).join(' ');
+}
+
+function groupByModel(products) {
+  const map = new Map();
+  for (const p of products) {
+    const key = modelKeyForTitle(p.title) || (p.id || '').slice(0, 24);
+    if (!map.has(key)) map.set(key, { key, titleCandidates: [], items: [] });
+    const g = map.get(key);
+    g.items.push(p);
+    if (p.title) g.titleCandidates.push(p.title);
+  }
+
+  // create ordered array, sort groups by cheapest price inside
+  const groups = Array.from(map.values()).map(g => {
+    g.items.sort((a,b) => a.price - b.price);
+    // choose representative title (shortest non-empty)
+    g.title = g.titleCandidates.sort((a,b) => a.length - b.length)[0] || g.items[0]?.title || 'Product';
+    g.best = g.items[0];
+    g.minPrice = g.best.price;
+    return g;
+  });
+
+  groups.sort((a,b) => a.minPrice - b.minPrice);
+  return groups;
+}
+
+/* ---------- RENDERING ---------- */
+function renderGroups(groups) {
+  resultsEl.innerHTML = '';
+  for (const g of groups) {
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    const header = document.createElement('div');
+    header.className = 'row';
+    const h = document.createElement('h3');
+    h.textContent = g.title;
+    header.appendChild(h);
+
+    const bestBadge = document.createElement('span');
+    bestBadge.className = 'best';
+    bestBadge.textContent = `Best ${g.best.price} AED — ${g.best.store}`;
+    header.appendChild(bestBadge);
+
+    card.appendChild(header);
+
+    // show main image (from best)
+    const row = document.createElement('div');
+    row.className = 'row';
+    const img = document.createElement('img');
+    img.src = g.best.image || placeholder();
+    img.alt = g.title;
+    row.appendChild(img);
+
+    const info = document.createElement('div');
+    info.style.flex = '1';
+    info.innerHTML = `<div class="small-muted">From ${g.items.length} stores</div>
+                      <div style="margin-top:6px"><strong>${g.best.price} AED</strong></div>`;
+    row.appendChild(info);
+    card.appendChild(row);
+
+    // list stores
+    for (const item of g.items) {
+      const sr = document.createElement('div');
+      sr.className = 'store-row';
+
+      const left = document.createElement('div');
+      left.className = 'store-left';
+      const sImg = document.createElement('img');
+      sImg.src = item.image || placeholder();
+      left.appendChild(sImg);
+      const sTitle = document.createElement('div');
+      sTitle.innerHTML = `<div style="font-weight:700">${item.store}</div><div class="small-muted">${truncate(item.title,80)}</div>`;
+      left.appendChild(sTitle);
+
+      const right = document.createElement('div');
+      right.style.textAlign = 'right';
+      right.innerHTML = `<div class="price">${item.price} AED</div>
+                         <div class="actions" style="margin-top:6px">
+                           <a href="${item.link}" target="_blank" rel="noopener">Buy</a>
+                           <button onclick='addToBasketFromUI(${JSON.stringify(item).replace(/"/g,'&quot;')})'>Add</button>
+                         </div>`;
+
+      sr.appendChild(left);
+      sr.appendChild(right);
+      card.appendChild(sr);
+    }
 
     resultsEl.appendChild(card);
-  });
+  }
+}
+
+/* ---------- Best deals carousel ---------- */
+function renderBestDeals(allProducts) {
+  if (!Array.isArray(allProducts) || allProducts.length === 0) { dealsSection.style.display='none'; return; }
+  const top = allProducts.slice().sort((a,b)=>a.price-b.price).slice(0,6);
+  dealsGrid.innerHTML = '';
+  for (const p of top) {
+    const c = document.createElement('div');
+    c.className = 'card deal-badge';
+    c.innerHTML = `<div style="display:flex;gap:10px;align-items:center">
+      <img src="${p.image||placeholder()}" style="width:90px;height:70px;object-fit:cover;border-radius:8px">
+      <div style="flex:1">
+        <div style="font-weight:700">${truncate(p.title,80)}</div>
+        <div class="small-muted">${p.store}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-weight:800">${p.price} AED</div>
+        <div style="margin-top:8px">
+          <a href="${p.link}" target="_blank" rel="noopener" class="actions">Buy</a>
+        </div>
+      </div>
+    </div>`;
+    dealsGrid.appendChild(c);
+  }
+  dealsSection.style.display = 'block';
+}
+
+/* ---------- Small utilities ---------- */
+function numeric(v){ if (v==null) return NaN; const n = Number(String(v).toString().replace(/[^0-9.]/g,'')); return isFinite(n)?n:NaN }
+function truncate(s,len=60){ if(!s) return ''; return s.length>len? s.slice(0,len-1)+'…':s }
+function placeholder(){ return 'https://images.unsplash.com/photo-1526178613751-0b5a5f1f6f5d?w=800&auto=format&fit=crop&q=60' }
+
+/* ---------- Sharaf product helper ---------- */
+
+/* (not exposed) */
+
+function error(msg){
+  errorEl.style.display='block';
+  errorEl.textContent = msg;
+}
+
+async function addToBasketFromUI(item){
+  addToBasket(item);
+  updateUI();
+}
+
+/* ---------- Basket + localStorage ---------- */
+function loadState(){
+  try{
+    appState.basket = JSON.parse(localStorage.getItem('uae_price_hunter_basket')||'[]');
+    appState.points = parseInt(localStorage.getItem('user_points')||'0')||0;
+  }catch(e){ appState = {basket:[],points:0} }
+}
+function saveState(){
+  try{
+    localStorage.setItem('uae_price_hunter_basket', JSON.stringify(appState.basket));
+    localStorage.setItem('user_points', String(appState.points||0));
+  }catch(e){}
+}
+function addToBasket(p){
+  appState.basket.push({...p, qty:1});
+  appState.points = (appState.points||0) + 50;
+  saveState();
+}
+function updateUI(){
+  basketCountEl.textContent = appState.basket.length;
+  totalPointsEl.textContent = appState.points||0;
+}
+
+/* ---------- grouping runner helpers ---------- */
+function groupKeyFromTitle(t){ return modelKeyForTitle(t); }
+
+/* ---------- load sharaf products given search results ---------- */
+/* small wrapper re-implemented with concurrency control */
+async function fetchSharafProductsFromSearch(searchResults, limit=8){
+  if (!Array.isArray(searchResults) || searchResults.length === 0) return [];
+  const urls = searchResults.map(r=>r.link).filter(Boolean).slice(0, limit);
+  const batchSize = 4;
+  const out = [];
+  for (let i=0;i<urls.length;i+=batchSize){
+    const batch = urls.slice(i,i+batchSize).map(u =>
+      fetchJsonWithTimeout(SHARAF_PRODUCT + encodeURIComponent(u), 20000)
+        .then(j=> j && j.price!=null ? {
+          title: j.title||j.name||u,
+          price: numeric(j.price),
+          image: j.image||null,
+          link: j.link||u,
+          store: j.store||'SharafDG',
+        } : null)
+        .catch(()=>null)
+    );
+    const res = await Promise.all(batch);
+    res.forEach(r=> { if (r && isFinite(r.price)) out.push(r); });
+  }
+  return out;
+}
+
+/* ---------- initial quick search if value present ---------- */
+window.performSearch = runSearch;
+window.addToBasket = addToBasket;
+if (searchInput.value && searchInput.value.trim()) {
+  // do one initial search (useful for immediate testing)
+  runSearch();
 }
