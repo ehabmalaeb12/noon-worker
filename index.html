@@ -9,17 +9,28 @@
 <body>
   <header class="topbar">
     <div class="brand">UAE Price Hunter</div>
-    <div class="status">Basket: <span id="basketCount">0</span> · Points: <span id="totalPoints">0</span></div>
+    <div class="controls">
+      <input id="searchInput" placeholder="Search product (e.g. iphone)" value="iphone" />
+      <button id="searchBtn">Search</button>
+    </div>
+    <div class="meta">
+      Basket: <span id="basketCount">0</span> • Points: <span id="totalPoints">0</span>
+    </div>
   </header>
 
   <main class="container">
-    <div class="searchRow">
-      <input id="searchInput" placeholder="Search product (e.g. iphone)" value="iphone">
-      <button id="searchBtn">Search</button>
-    </div>
+    <div id="loading" class="loading" aria-live="polite" style="display:none">Searching stores…</div>
+    <div id="error" class="error" style="display:none"></div>
 
-    <div id="loading" class="muted" hidden>Searching stores…</div>
-    <div id="searchResults" class="grid"></div>
+    <section id="bestDeals" class="section" style="display:none">
+      <h2>Best deals across stores</h2>
+      <div id="dealsGrid" class="grid"></div>
+    </section>
+
+    <section id="resultsSection" class="section">
+      <h2>Results</h2>
+      <div id="searchResults" class="grid"></div>
+    </section>
   </main>
 
   <script src="script.js"></script>
