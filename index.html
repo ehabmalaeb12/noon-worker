@@ -1,37 +1,26 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>UAE Price Hunter — Compare</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar">
     <div class="brand">UAE Price Hunter</div>
-    <div class="meta">Basket: <span id="basketCount">0</span> • Points: <span id="totalPoints">0</span></div>
+    <div class="status">Basket: <span id="basketCount">0</span> · Points: <span id="totalPoints">0</span></div>
   </header>
 
   <main class="container">
     <div class="searchRow">
-      <input id="searchInput" placeholder="Search product (e.g. iphone)" value="iphone" />
+      <input id="searchInput" placeholder="Search product (e.g. iphone)" value="iphone">
       <button id="searchBtn">Search</button>
     </div>
 
-    <div class="controls">
-      <label><input type="checkbox" id="useAmazon" checked /> Amazon</label>
-      <label><input type="checkbox" id="useSharaf" checked /> Sharaf DG</label>
-    </div>
-
-    <div id="loading" class="loading" hidden>Searching stores…</div>
-    <div id="message" class="message"></div>
-
-    <div id="results" class="grid"></div>
+    <div id="loading" class="muted" hidden>Searching stores…</div>
+    <div id="searchResults" class="grid"></div>
   </main>
-
-  <footer class="footer">
-    Built for demo — data from workers (Amazon & Sharaf).
-  </footer>
 
   <script src="script.js"></script>
 </body>
