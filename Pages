@@ -1,0 +1,40 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # 1) Checkout code
+      - uses: actions/checkout@v4
+
+      # 2) Build step (if you have a build; otherwise this can be just a passthrough)
+      - name: Build (no-op for static files)
+        run: |
+          echo "If you have a build step (npm install && npm run build) add it here"
+          # If you don't have a build, this step is ok to remain as a no-op
+
+      # 3) Upload artifact for Pages
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v1
+        with:
+          path: '.'    # publish repository root; change to './dist' if you build into dist/
+
+      # 4) Deploy to Pages
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v2
+
+      # 5) Optional: annotate/deploy result
+      - name: Confirm deployment URL
+        run: |
+          echo "Deployed to: ${{ steps.deploy.outputs.page_url }}"
