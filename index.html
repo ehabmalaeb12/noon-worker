@@ -1,33 +1,27 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>UAE Price Hunter — Compare</title>
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <title>UAE Price Hunter</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">UAE Price Hunter</div>
-    <div class="meta">Compare prices across stores · Amazon + SharafDG</div>
+  <header class="header">
+    <h1>UAE Price Hunter</h1>
+    <span class="subtitle">Compare prices across stores · Amazon + SharafDG</span>
   </header>
 
   <main class="container">
-    <div class="search-row">
-      <input id="searchInput" placeholder="Search product (e.g. iphone)" value="iphone" />
+    <div class="search-box">
+      <input id="query" type="text" placeholder="Search product…" />
       <button id="searchBtn">Search</button>
     </div>
 
-    <div class="controls">
-      <button id="toggleDebug">Toggle Debug</button>
-      <span class="tip">Tip: open browser console for logs.</span>
-    </div>
+    <button id="toggleDebug">Toggle Debug</button>
+    <div id="debug" class="debug hidden"></div>
 
-    <div id="loading" class="loading" style="display:none">Searching stores…</div>
-
-    <section id="searchResults" class="results"></section>
-
-    <pre id="debugPanel" class="debug" style="display:none"></pre>
+    <div id="results" class="results"></div>
   </main>
 
   <script src="script.js"></script>
