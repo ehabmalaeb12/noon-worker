@@ -1,72 +1,35 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>UAE Price Hunter — Compare</title>
-
-  <style>
-    :root{--accent:#0b69ff;--muted:#6b7280;--bg:#f7f9fb}
-    html,body{height:100%;margin:0;font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;}
-    body{background:var(--bg);padding:18px;color:#111}
-    header{display:flex;gap:12px;align-items:center;margin-bottom:14px}
-    h1{margin:0;font-size:18px}
-    .meta{margin-left:auto;font-size:13px;color:var(--muted)}
-    .search-bar{display:flex;gap:8px;margin-bottom:12px}
-    input#searchInput{flex:1;padding:12px 14px;border-radius:10px;border:1px solid #e6e9ef;font-size:15px;outline:none}
-    button#searchBtn{padding:10px 14px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-weight:700;cursor:pointer}
-    #loading{display:none;color:var(--muted);margin-bottom:10px}
-    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
-    .card{background:#fff;padding:12px;border-radius:12px;box-shadow:0 8px 24px rgba(15,23,42,0.06);display:flex;flex-direction:column;gap:10px}
-    .card h2{font-size:15px;margin:0;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .card .best {display:flex;justify-content:space-between;align-items:center}
-    .badge{display:inline-block;padding:6px 8px;border-radius:999px;background:#eaf4ff;color:var(--accent);font-weight:700;font-size:12px}
-    .store-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #f0f2f5}
-    .store-left{display:flex;gap:10px;align-items:center;min-width:0}
-    .store-left img{width:56px;height:56px;object-fit:cover;border-radius:8px;background:#f3f5f8}
-    .store-info{min-width:0}
-    .store-info .store{font-weight:700}
-    .store-info .stitle{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .store-right{text-align:right;min-width:100px}
-    a.open-link{display:inline-block;margin-top:6px;color:var(--accent);text-decoration:none;font-weight:600}
-    .no-results{color:var(--muted)}
-    #debugPanel{margin-top:12px;background:#fff;padding:10px;border-radius:10px;font-family:monospace;font-size:12px;color:#333;display:none;white-space:pre-wrap;overflow:auto;max-height:220px}
-    @media (max-width:420px){ .grid{grid-template-columns:1fr} .store-right{min-width:80px}}
-  </style>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>
-    <h1>UAE Price Hunter</h1>
-    <div class="meta">Basket: <strong id="basketCount">0</strong> • Points: <strong id="totalPoints">0</strong></div>
+  <header class="topbar">
+    <div class="brand">UAE Price Hunter</div>
+    <div class="meta">Compare prices across stores · Amazon + SharafDG</div>
   </header>
 
-  <div class="search-bar">
-    <input id="searchInput" placeholder="Search product (e.g. iphone, macbook)" value="iphone" />
-    <button id="searchBtn">Search</button>
-  </div>
+  <main class="container">
+    <div class="search-row">
+      <input id="searchInput" placeholder="Search product (e.g. iphone)" value="iphone" />
+      <button id="searchBtn">Search</button>
+    </div>
 
-  <div id="loading">Searching stores… (this might take a few seconds)</div>
-  <div id="searchResults" class="grid"></div>
+    <div class="controls">
+      <button id="toggleDebug">Toggle Debug</button>
+      <span class="tip">Tip: open browser console for logs.</span>
+    </div>
 
-  <!-- optional debug panel toggle -->
-  <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
-    <button id="toggleDebug" style="padding:8px 10px;border-radius:8px;border:1px solid #e6e9ef;background:#fff;cursor:pointer">Toggle Debug</button>
-    <div style="color:var(--muted);font-size:13px">Tip: open browser console for logs.</div>
-  </div>
+    <div id="loading" class="loading" style="display:none">Searching stores…</div>
 
-  <pre id="debugPanel"></pre>
+    <section id="searchResults" class="results"></section>
 
-  <script>
-    // small UI glue so script.js can reference elements immediately
-    // script.js expects these IDs: searchInput, searchBtn, loading, searchResults
-    // debug panel toggle:
-    document.getElementById('toggleDebug').addEventListener('click', () => {
-      const p = document.getElementById('debugPanel');
-      p.style.display = p.style.display === 'block' ? 'none' : 'block';
-    });
-  </script>
+    <pre id="debugPanel" class="debug" style="display:none"></pre>
+  </main>
 
-  <!-- main app logic -->
   <script src="script.js"></script>
 </body>
 </html>
