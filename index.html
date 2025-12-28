@@ -1,34 +1,30 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>UAE Price Hunter — Compare</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar">
     <div class="brand">UAE Price Hunter</div>
-    <div class="search-row">
-      <input id="q" placeholder="Search product (e.g. iphone)" />
-      <button id="searchBtn">Search</button>
-    </div>
-    <div class="meta">Basket: <span id="basket">0</span> • Points: <span id="points">0</span></div>
+    <div class="right">Basket: <span id="basket">0</span> • Points: <span id="points">0</span></div>
   </header>
 
   <main class="container">
-    <section id="status" class="status">Enter a product and click Search</section>
-
-    <section class="results-section">
-      <h2>Results</h2>
-      <div id="results" class="grid"></div>
+    <section class="search-row">
+      <input id="searchInput" placeholder="Search product (e.g. iphone)" value="iphone" />
+      <button id="searchBtn">Search</button>
     </section>
 
-    <section class="debug">
-      <details>
-        <summary>Debug / logs</summary>
-        <pre id="logs" class="logs">No logs yet.</pre>
-      </details>
+    <div id="status" class="status">Idle</div>
+
+    <section id="results" class="grid"></section>
+
+    <section class="logs">
+      <h3>Debug / logs</h3>
+      <pre id="logs"></pre>
     </section>
   </main>
 
