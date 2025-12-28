@@ -1,33 +1,28 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>UAE Price Hunter — Compare</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-  <header class="topbar">
+  <header class="top">
     <div class="brand">UAE Price Hunter</div>
-    <div class="right">Basket: <span id="basket">0</span> • Points: <span id="points">0</span></div>
+    <div class="meta">Compare prices across stores • Amazon + SharafDG</div>
   </header>
 
-  <main class="container">
+  <main>
     <section class="search-row">
       <input id="searchInput" placeholder="Search product (e.g. iphone)" value="iphone" />
       <button id="searchBtn">Search</button>
     </section>
 
-    <div id="status" class="status">Idle</div>
+    <div id="loading" class="loading" aria-live="polite">Ready</div>
 
-    <section id="results" class="grid"></section>
-
-    <section class="logs">
-      <h3>Debug / logs</h3>
-      <pre id="logs"></pre>
-    </section>
+    <section id="searchResults" class="grid"></section>
   </main>
 
-  <script src="script.js"></script>
+  <script src="./script.js"></script>
 </body>
 </html>
