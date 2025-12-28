@@ -1,38 +1,25 @@
-body {
-  font-family: system-ui, sans-serif;
-  background: #f6f7fb;
-}
-
-#results {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
-}
-
-.card {
-  background: white;
-  padding: 12px;
-  border-radius: 10px;
-  box-shadow: 0 4px 10px rgba(0,0,0,.06);
-}
-
-.card img {
-  width: 100%;
-  height: 180px;
-  object-fit: contain;
-}
-
-.price {
-  font-weight: bold;
-  margin: 6px 0;
-}
-
-.card a {
-  display: inline-block;
-  margin-top: 6px;
-  padding: 6px 10px;
-  background: #2563eb;
-  color: white;
-  border-radius: 6px;
-  text-decoration: none;
-}
+:root{--bg:#f6f8fb;--card:#ffffff;--accent:#0b69ff;--muted:#666}
+*{box-sizing:border-box}
+body{font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, 'Helvetica Neue', Arial;margin:0;background:var(--bg);color:#111}
+.top{display:flex;align-items:center;gap:12px;padding:18px;border-bottom:1px solid #e8edf3;background:#fff}
+.brand{font-weight:700;font-size:18px}
+.meta{margin-left:auto;color:var(--muted);font-size:13px}
+main{padding:18px;max-width:1100px;margin:0 auto}
+.search-row{display:flex;gap:8px;margin-bottom:14px}
+.search-row input{flex:1;padding:12px;border-radius:12px;border:1px solid #dde7fb;font-size:15px}
+.search-row button{padding:12px 18px;border-radius:12px;border:none;background:var(--accent);color:#fff;font-weight:600;cursor:pointer}
+.loading{color:var(--muted);margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.card{background:var(--card);padding:12px;border-radius:12px;box-shadow:0 6px 20px rgba(13,24,40,0.06);display:flex;flex-direction:column}
+.card .top-row{display:flex;gap:12px}
+.card img{width:120px;height:120px;object-fit:cover;border-radius:8px}
+.card h3{margin:0;font-size:16px}
+.best-badge{background:#e9f7ee;color:#0b8a39;padding:6px 8px;border-radius:999px;font-weight:700;font-size:12px;margin-left:8px}
+.store-list{margin-top:10px;padding-top:10px;border-top:1px solid #f1f5fa}
+.store-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0}
+.store-row .info{display:flex;gap:10px;align-items:center}
+.store-row .store-name{font-weight:700;font-size:13px}
+.price{font-weight:800}
+.buy-btn{background:transparent;border:1px solid var(--accent);padding:6px 10px;border-radius:8px;color:var(--accent);cursor:pointer}
+.note{color:var(--muted);font-size:13px;margin-top:10px}
+@media (max-width:420px){.card img{width:100px;height:100px}}
