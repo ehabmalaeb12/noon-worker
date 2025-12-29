@@ -71,22 +71,35 @@ async function fetchSharafProducts(links) {
 function render(items) {
   resultsEl.innerHTML = "";
 
-  if (!items.length) {
+  console.log("Rendering items:", items.length);
+
+  if (!items || items.length === 0) {
     resultsEl.innerHTML = "<p>No products found.</p>";
     return;
   }
 
   for (const p of items) {
+    const title =
+      p.title || p.name || "No title";
+
+    const image =
+      p.image || p.thumbnail || "";
+
+    const price =
+      p.price !== undefined && p.price !== null
+        ? `${p.price} ${p.currency || "AED"}`
+        : "Price unavailable";
+
+    const store = p.store || "Unknown";
+
     const card = document.createElement("div");
     card.className = "card";
 
     card.innerHTML = `
-      <img src="${p.image || ""}" />
-      <h3>${p.title || "No title"}</h3>
-      <div class="store">${p.store}</div>
-      <div class="price">${
-        p.price != null ? p.price + " " + (p.currency || "AED") : "Price unavailable"
-      }</div>
+      <img src="${image}" alt="" />
+      <h3>${title}</h3>
+      <div class="store">${store}</div>
+      <div class="price">${price}</div>
       <a class="link" href="${p.link}" target="_blank">Open product</a>
     `;
 
