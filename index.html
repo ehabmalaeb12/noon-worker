@@ -1,39 +1,50 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>UAE Price Hunter — Test</title>
+  <meta charset="UTF-8" />
+  <title>UAE Price Hunter</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">UAE Price Hunter</div>
-    <div class="meta">Compare prices across stores · Amazon + SharafDG</div>
+
+  <header class="header">
+    <div class="container">
+      <h1>UAE Price Hunter</h1>
+      <p>Compare prices across Amazon & SharafDG</p>
+    </div>
   </header>
 
   <main class="container">
-    <div class="search-row">
-      <input id="q" placeholder="Search product (eg. iphone)" value="iphone" />
+
+    <!-- Search box -->
+    <div class="search-box">
+      <input
+        id="searchInput"
+        type="text"
+        placeholder="Search for iPhone, MacBook, charger..."
+      />
       <button id="searchBtn">Search</button>
     </div>
 
-    <div class="controls">
-      <button id="toggleDebug">Toggle Debug</button>
-      <div class="hint">Tip: open browser console for logs.</div>
+    <!-- Actions -->
+    <div class="actions">
+      <button id="toggleDebug" class="secondary">Toggle Debug</button>
+      <span class="hint">Tip: Amazon loads first, Sharaf follows</span>
     </div>
 
-    <div id="status" class="status">Ready.</div>
+    <!-- Results -->
+    <section id="searchResults"></section>
 
-    <section>
-      <h2>Results</h2>
-      <div id="results" class="grid"></div>
-    </section>
+    <!-- Debug -->
+    <pre id="debugBox" class="debug"></pre>
 
-    <section id="debugPanel" class="debug hidden">
-      <pre id="dbg"></pre>
-    </section>
   </main>
+
+  <footer class="footer">
+    <p>Powered by Amazon & SharafDG</p>
+  </footer>
 
   <script src="script.js"></script>
 </body>
