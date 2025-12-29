@@ -1,105 +1,38 @@
-body {
-  margin: 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  background: #f5f7fb;
-  color: #111;
+:root{
+  --bg:#f5f7fb;
+  --card:#fff;
+  --accent:#0b69ff;
+  --muted:#6b7280;
+  --best:#13a76a;
 }
+*{box-sizing:border-box}
+body{font-family:Inter,system-ui,Segoe UI,Arial;margin:0;background:var(--bg);color:#111}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;background:#fff;border-bottom:1px solid #eee}
+.brand{font-weight:700}
+.container{max-width:980px;margin:22px auto;padding:0 14px}
+.search-row{display:flex;gap:10px;margin-bottom:10px}
+.search-row input{flex:1;padding:14px;border-radius:10px;border:1px solid #e6e9ef;background:#fff;font-size:16px}
+.search-row button{background:var(--accent);color:#fff;border:none;padding:0 18px;border-radius:10px;cursor:pointer}
+.controls{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.controls button{padding:8px 12px;border-radius:8px;border:1px solid #ddd;background:#fff;cursor:pointer}
+.hint{color:var(--muted);font-size:13px}
+.status{color:var(--muted);margin-bottom:12px}
 
-.header {
-  background: #fff;
-  padding: 16px;
-  border-bottom: 1px solid #ddd;
-}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.card{background:var(--card);padding:12px;border-radius:12px;box-shadow:0 8px 20px rgba(10,10,10,0.04);display:flex;flex-direction:column;gap:8px}
+.card img{width:100%;height:160px;object-fit:cover;border-radius:8px;background:#fafafa}
+.title{font-weight:600;font-size:15px;min-height:42px}
+.price{font-weight:700;color:var(--accent);font-size:18px}
+.store{font-size:13px;color:var(--muted)}
+.actions{display:flex;gap:8px;margin-top:auto}
+.actions a{background:#fff;border:1px solid #e6e9ef;padding:8px 12px;border-radius:8px;color:var(--accent);text-decoration:none}
+.badge{display:inline-block;padding:4px 8px;background:var(--best);color:#fff;border-radius:999px;font-weight:700;font-size:12px;margin-left:8px}
 
-.header h1 {
-  margin: 0;
-  font-size: 22px;
-}
+.debug{background:#000;color:#0f0;padding:12px;border-radius:8px;margin-top:18px;white-space:pre-wrap}
+.hidden{display:none}
 
-.subtitle {
-  font-size: 13px;
-  color: #666;
-}
-
-.container {
-  padding: 16px;
-}
-
-.search-box {
-  display: flex;
-  gap: 10px;
-}
-
-.search-box input {
-  flex: 1;
-  padding: 12px;
-  font-size: 16px;
-}
-
-.search-box button {
-  padding: 12px 18px;
-  font-size: 16px;
-  background: #2563eb;
-  color: #fff;
-  border: none;
-  border-radius: 4px;
-}
-
-.results {
-  margin-top: 20px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 14px;
-}
-
-.card {
-  background: #fff;
-  border-radius: 8px;
-  padding: 12px;
-  box-shadow: 0 2px 6px rgba(0,0,0,.08);
-  display: flex;
-  flex-direction: column;
-}
-
-.card img {
-  width: 100%;
-  height: 160px;
-  object-fit: contain;
-  margin-bottom: 10px;
-}
-
-.card h3 {
-  font-size: 14px;
-  margin: 0 0 6px 0;
-}
-
-.store {
-  font-size: 12px;
-  color: #666;
-}
-
-.price {
-  font-weight: bold;
-  margin-top: 6px;
-}
-
-.link {
-  margin-top: auto;
-  text-decoration: none;
-  color: #2563eb;
-  font-size: 13px;
-}
-
-.debug {
-  margin-top: 12px;
-  padding: 10px;
-  background: #000;
-  color: #0f0;
-  font-family: monospace;
-  font-size: 12px;
-  white-space: pre-wrap;
-}
-
-.hidden {
-  display: none;
+/* mobile tweaks */
+@media (max-width:420px){
+  .search-row input{padding:12px}
+  .card img{height:140px}
 }
