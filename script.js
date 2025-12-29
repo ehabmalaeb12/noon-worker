@@ -1,282 +1,195 @@
-// script.js — Improved reliability: retries, longer timeouts for Sharaf, client-side cache, jittered requests
-document.addEventListener("DOMContentLoaded", () => {
-  // === CONFIG ===
-  const AMAZON_WORKER = "https://shopping-worker.ehabmalaeb2.workers.dev";
-  const SHARAF_WORKER = "https://sharaf-worker.ehabmalaeb2.workers.dev";
+// script.js — optimized, safe, non-destructive (workers untouched)
 
-  const MAX_SHARAF_PRODUCTS = 6;    // safety
-  const SHARAF_CONCURRENCY = 2;     // parallel fetches
-  const FETCH_TIMEOUT_MS = 12000;   // general fetch timeout
-  const PRODUCT_TIMEOUT_MS = 25000; // sharaf product timeout (longer)
-  const RETRIES = 2;                // number of retries for important calls
-  const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+// CONFIG (keep these exactly as your workers)
+const AMAZON_WORKER = "https://shopping-worker.ehabmalaeb2.workers.dev";
+const SHARAF_WORKER = "https://sharaf-worker.ehabmalaeb2.workers.dev";
 
-  // === DOM ===
-  const searchBtn = document.getElementById("searchBtn");
-  const searchInput = document.getElementById("searchInput");
-  const resultsEl = document.getElementById("searchResults");
-  const loadingEl = document.getElementById("loading");
-  const debugPanel = document.getElementById("debugPanel");
-  const toggleDebugBtn = document.getElementById("toggleDebug");
+// TUNABLE: speed / safety
+const MAX_SHARAF_PRODUCTS = 5;    // how many sharaf product links to fetch
+const SHARAF_CONCURRENCY = 2;     // how many sharaf product detail fetches in parallel
+const FETCH_RETRIES = 3;          // fetch retry attempts
+const FETCH_BASE_DELAY = 500;     // ms base backoff
 
-  if (!searchBtn || !searchInput || !resultsEl || !loadingEl || !debugPanel || !toggleDebugBtn) {
-    console.error("Missing required DOM elements. Check index.html IDs.");
-    return;
-  }
+// UI refs
+const searchBtn = document.getElementById("searchBtn");
+const searchInput = document.getElementById("searchInput");
+const resultsEl = document.getElementById("searchResults");
+const loadingEl = document.getElementById("loading");
 
-  // === Debug logger (page + console) ===
-  function dbg(...args) {
+let renderedItems = []; // { el, price, store, id }
+
+// helpers
+function log(...args) { console.log(...args); }
+function showLoading(on = true) { loadingEl.style.display = on ? "block" : "none"; }
+function clearUI() {
+  resultsEl.innerHTML = "";
+  renderedItems = [];
+  showLoading(true);
+}
+function createCardElement(product) {
+  const div = document.createElement("div");
+  div.className = "card";
+  div.dataset.link = product.link || "";
+  div.innerHTML = `
+    <img src="${product.image || ""}" loading="lazy" onerror="this.style.opacity=0.6;this.style.filter='grayscale(40%)'">
+    <h3>${product.title || "No title"}</h3>
+    <div class="store-row">
+      <strong class="price-text">${product.price ? (product.price + " " + product.currency) : "Price N/A"}</strong>
+      <span class="badge store-badge">${product.store || ""}</span>
+    </div>
+    <div style="margin-top:8px;display:flex;gap:8px">
+      <a class="view-link" href="${product.link || "#"}" target="_blank">View</a>
+      <button class="save-btn" style="margin-left:auto">Save</button>
+    </div>
+  `;
+  return div;
+}
+
+// safe fetch with retries/backoff (no AbortController)
+async function fetchWithRetry(url, opts = {}, attempts = FETCH_RETRIES, baseDelay = FETCH_BASE_DELAY) {
+  let err = null;
+  for (let i = 0; i < attempts; i++) {
     try {
-      const msg = args.map(a => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
-      console.log(msg);
-      debugPanel.textContent += msg + "\n";
-      debugPanel.scrollTop = debugPanel.scrollHeight;
-    } catch (e) { console.log("dbg error", e); }
-  }
-
-  toggleDebugBtn.addEventListener("click", () => {
-    const shown = debugPanel.style.display !== "block";
-    debugPanel.style.display = shown ? "block" : "none";
-  });
-
-  // === UI helpers ===
-  function clearUI() {
-    resultsEl.innerHTML = "";
-    debugPanel.textContent = "";
-    loadingEl.style.display = "block";
-  }
-  function doneUI() { loadingEl.style.display = "none"; }
-  function createCard(p) {
-    const div = document.createElement("div");
-    div.className = "card";
-    const priceText = p.price ? (p.price + " " + (p.currency || "AED")) : "Price N/A";
-    div.innerHTML = `
-      <img src="${p.image || ""}" alt="${(p.title||'')}" loading="lazy" />
-      <h3>${p.title || "No title"}</h3>
-      <div class="store-row">
-        <div><strong>${priceText}</strong></div>
-        <div>
-          <span class="badge">${p.store || "Store"}</span>
-        </div>
-      </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
-        <a href="${p.link}" target="_blank">View on store</a>
-        <div></div>
-      </div>
-    `;
-    if (p.price) div.dataset.price = String(p.price);
-    resultsEl.appendChild(div);
-    return div;
-  }
-  function markBestPriceBadge() {
-    const cards = Array.from(resultsEl.querySelectorAll(".card"));
-    let bestCard = null;
-    let bestPrice = Infinity;
-    for (const c of cards) {
-      const p = parseFloat((c.dataset.price || "").replace(/[^0-9.]/g, ""));
-      if (!isNaN(p) && p < bestPrice) {
-        bestPrice = p;
-        bestCard = c;
-      }
-    }
-    resultsEl.querySelectorAll(".best-badge").forEach(n=>n.remove());
-    if (bestCard) {
-      const el = document.createElement("span");
-      el.className = "best-badge";
-      el.textContent = "Best price";
-      const sr = bestCard.querySelector(".store-row");
-      if (sr) sr.appendChild(el);
-    }
-  }
-
-  // === Simple local cache (localStorage) ===
-  function cacheKey(url) { return "ph_cache:" + url; }
-  function getCached(url) {
-    try {
-      const raw = localStorage.getItem(cacheKey(url));
-      if (!raw) return null;
-      const obj = JSON.parse(raw);
-      if (!obj.ts || Date.now() - obj.ts > (obj.ttl || CACHE_TTL_MS)) {
-        localStorage.removeItem(cacheKey(url));
-        return null;
-      }
-      return obj.data;
-    } catch (e) { return null; }
-  }
-  function setCached(url, data, ttl = CACHE_TTL_MS) {
-    try {
-      localStorage.setItem(cacheKey(url), JSON.stringify({ ts: Date.now(), ttl, data }));
-    } catch (e) { /* ignore storage errors */ }
-  }
-
-  // === fetch with timeout ===
-  async function fetchWithTimeout(url, opts = {}, timeoutMs = FETCH_TIMEOUT_MS) {
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetch(url, { ...opts, signal: controller.signal });
-      clearTimeout(id);
+      const res = await fetch(url, opts);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res;
     } catch (e) {
-      clearTimeout(id);
-      throw e;
+      err = e;
+      const wait = baseDelay * Math.pow(2, i);
+      await new Promise(r => setTimeout(r, wait));
     }
   }
+  throw err;
+}
 
-  // === fetch with retries + backoff ===
-  async function fetchWithRetries(url, opts = {}, retries = RETRIES, timeoutMs = FETCH_TIMEOUT_MS, backoffMs = 800) {
-    let attempt = 0;
-    while (attempt <= retries) {
-      try {
-        attempt++;
-        if (attempt > 1) dbg(`Retry attempt ${attempt} -> ${url}`);
-        const res = await fetchWithTimeout(url, opts, timeoutMs);
-        return res;
-      } catch (err) {
-        dbg(`Fetch error (attempt ${attempt}) ${url} ${String(err)}`);
-        if (attempt > retries) throw err;
-        // backoff
-        await new Promise(r => setTimeout(r, backoffMs * attempt));
-      }
-    }
-  }
-
-  /* ---------------- AMAZON ---------------- */
-  async function fetchAmazon(query) {
+/* ---------------- AMAZON ---------------- */
+async function fetchAmazon(query) {
+  try {
     const url = `${AMAZON_WORKER}/search?q=${encodeURIComponent(query)}`;
-    dbg(`Query Amazon worker -> ${url}`);
-    try {
-      // try with one retry
-      const res = await fetchWithRetries(url, {}, 1, 12000, 700);
-      const data = await res.json();
-      const list = data.results || [];
-      dbg(`Amazon results count ${list.length}`);
-      return list;
-    } catch (e) {
-      dbg("Amazon fetch error", String(e));
-      return [];
-    }
+    const res = await fetchWithRetry(url, { headers: { "Accept": "application/json" } }, 2, 300);
+    const data = await res.json();
+    log(`Amazon results count ${data.results?.length || 0}`);
+    return data.results || [];
+  } catch (e) {
+    log("Amazon fetch failed", e?.message || e);
+    return [];
   }
+}
 
-  /* ---------------- SHARAF SEARCH LINKS ---------------- */
-  async function fetchSharafLinks(query) {
+/* ---------------- SHARAF ---------------- */
+async function fetchSharafLinks(query) {
+  try {
     const url = `${SHARAF_WORKER}/search?q=${encodeURIComponent(query)}`;
-    dbg(`Query Sharaf search -> ${url}`);
-    try {
-      const res = await fetchWithRetries(url, {}, 1, 10000, 700);
-      const data = await res.json();
-      const links = (data.results || []).map(r => r.link).slice(0, MAX_SHARAF_PRODUCTS);
-      dbg(`Sharaf links count ${links.length}`);
-      return links;
-    } catch (e) {
-      dbg("Sharaf search failed", String(e));
-      return [];
-    }
+    const res = await fetchWithRetry(url, { headers: { "Accept": "application/json" } }, 2, 300);
+    const data = await res.json();
+    const links = (data.results || []).map(r => r.link).filter(Boolean).slice(0, MAX_SHARAF_PRODUCTS);
+    log(`Sharaf links count ${links.length}`);
+    return links;
+  } catch (e) {
+    log("Sharaf search failed", e?.message || e);
+    return [];
   }
+}
 
-  /* ---------------- SHARAF PRODUCT DETAILS (POOL, CACHE, RETRIES) ---------------- */
-  async function fetchSharafProducts(links) {
-    let index = 0;
-    let successCount = 0;
+// concurrency pool for Sharaf product fetches
+async function fetchSharafProducts(links) {
+  const results = [];
+  let idx = 0;
 
-    async function worker(id) {
-      while (true) {
-        const i = index++;
-        if (i >= links.length) return;
-        const productUrl = links[i];
-        try {
-          // check client cache first
-          const cached = getCached(productUrl);
-          if (cached) {
-            dbg(`Sharaf product cached -> ${productUrl}`);
-            createCard(cached);
-            successCount++;
-            markBestPriceBadge();
-            // small pause then continue
-            await new Promise(r => setTimeout(r, 120));
-            continue;
-          }
-
-          // jitter to reduce bursts
-          await new Promise(r => setTimeout(r, 150 * id + Math.floor(Math.random()*200)));
-
-          const fetchUrl = `${SHARAF_WORKER}/product?url=${encodeURIComponent(productUrl)}`;
-          dbg(`Sharaf product fetch -> ${productUrl}`);
-
-          // Use retries with longer timeout for product pages
-          const res = await fetchWithRetries(fetchUrl, {}, RETRIES, PRODUCT_TIMEOUT_MS, 900);
-          const data = await res.json();
-
-          if (data && (data.price || data.title)) {
-            createCard(data);
-            setCached(productUrl, data); // cache successful product
-            successCount++;
-            markBestPriceBadge();
-          } else {
-            dbg(`Sharaf product returned empty or no price -> ${productUrl}`);
-          }
-        } catch (err) {
-          dbg(`Sharaf product error ${productUrl} ${String(err)}`);
+  async function worker() {
+    while (idx < links.length) {
+      const current = links[idx++];
+      try {
+        log("Sharaf product fetch ->", current);
+        const url = `${SHARAF_WORKER}/product?url=${encodeURIComponent(current)}`;
+        const res = await fetchWithRetry(url, { headers: { "Accept": "application/json" } }, 2, 400);
+        const data = await res.json();
+        if (data && (data.title || data.price || data.image)) {
+          results.push(data);
+          renderProduct(data);
+        } else {
+          log("Sharaf product returned no fields", current);
         }
+      } catch (e) {
+        log("Sharaf product error", current, e?.message || e);
       }
     }
-
-    // start worker pool (indexed so each has different jitter)
-    const workers = [];
-    for (let i = 0; i < SHARAF_CONCURRENCY; i++) {
-      workers.push(worker(i));
-    }
-    await Promise.all(workers);
-    dbg(`Sharaf priced items: ${successCount}`);
   }
 
-  /* ---------------- MAIN SEARCH FLOW ---------------- */
-  let lastToken = 0;
-  async function startSearch() {
-    const query = searchInput.value.trim();
-    if (!query) return;
-    const token = ++lastToken;
-    clearUI();
-    dbg(`Start search: "${query}"`);
+  // start pool
+  const pool = Array.from({ length: Math.max(1, SHARAF_CONCURRENCY) }, () => worker());
+  await Promise.all(pool);
+  return results;
+}
 
-    // Amazon first for quick UX
-    const amazonList = await fetchAmazon(query);
-    if (token !== lastToken) { dbg("Search aborted (new request)"); return; }
+/* ---------------- Rendering + Best price badge ---------------- */
+function renderProduct(p) {
+  const el = createCardElement(p);
+  resultsEl.appendChild(el);
+  // store for best-price evaluation
+  const numericPrice = (p.price && !isNaN(Number(p.price))) ? Number(p.price) : null;
+  renderedItems.push({ el, price: numericPrice, store: p.store, link: p.link, title: p.title });
+  // after adding, compute best
+  highlightBestPrice();
+}
 
-    if (amazonList.length) {
-      amazonList.forEach(item => {
-        const p = {
-          store: item.store || "Amazon",
-          title: item.title || item.name || "",
-          price: item.price || item.finalPrice || null,
-          currency: item.currency || item.currency_code || "AED",
-          image: item.image || item.thumbnail || item.img || "",
-          link: item.link || item.url || item.product_link || ""
-        };
-        createCard(p);
-      });
-      markBestPriceBadge();
-    } else {
-      dbg("Amazon results count 0");
-    }
+function highlightBestPrice() {
+  // remove old best badges
+  document.querySelectorAll(".best-badge").forEach(b => b.remove());
+  // find lowest numeric price
+  const withPrice = renderedItems.filter(it => it.price != null);
+  if (withPrice.length === 0) return;
+  const min = Math.min(...withPrice.map(it => it.price));
+  // mark all that equal min (usually one)
+  withPrice.filter(it => it.price === min).forEach(it => {
+    const badge = document.createElement("span");
+    badge.className = "best-badge";
+    badge.style.cssText = "display:inline-block;padding:4px 8px;border-radius:999px;background:#ffe9e6;color:#b90d0d;font-weight:700;margin-left:8px;font-size:12px";
+    badge.textContent = "Best price";
+    const storeRow = it.el.querySelector(".store-row");
+    if (storeRow) storeRow.appendChild(badge);
+  });
+}
 
-    // Sharaf
-    const sharafLinks = await fetchSharafLinks(query);
-    if (token !== lastToken) { dbg("Search aborted (new request)"); return; }
-    if (sharafLinks.length) {
-      dbg(`Fetching Sharaf product details (${sharafLinks.length})`);
-      await fetchSharafProducts(sharafLinks);
-    } else {
-      dbg("Sharaf links count 0");
-    }
+/* ---------------- MAIN SEARCH FLOW ---------------- */
+async function startSearch() {
+  const query = (searchInput.value || "").trim();
+  if (!query) return;
+  clearUI();
+  log(`Start search: "${query}"`);
 
-    markBestPriceBadge();
-    doneUI();
-    dbg("Search finished");
+  // 1) Amazon fast path
+  const amazonResults = await fetchAmazon(query);
+  // normalize and render
+  (amazonResults || []).forEach(r => {
+    // expected r fields: { id/asin, title, price, currency, image, link, store }
+    renderProduct({
+      store: r.store || "Amazon.ae",
+      title: r.title || r.asin || "Amazon item",
+      price: r.price || null,
+      currency: r.currency || "AED",
+      image: r.image || null,
+      link: r.link || (r.asin ? `https://www.amazon.ae/dp/${r.asin}` : "#")
+    });
+  });
+
+  // 2) Sharaf links -> product details (safe, limited concurrency)
+  const sharafLinks = await fetchSharafLinks(query);
+  if (sharafLinks.length) {
+    log(`Fetching Sharaf product details (${sharafLinks.length})`);
+    await fetchSharafProducts(sharafLinks);
   }
 
-  // === events ===
-  searchBtn.addEventListener("click", startSearch);
-  searchInput.addEventListener("keydown", (e) => { if (e.key === "Enter") startSearch(); });
+  showLoading(false);
+  log("Search finished");
+}
 
-});
+/* ---------------- events ---------------- */
+searchBtn.addEventListener("click", startSearch);
+searchInput.addEventListener("keydown", (e) => { if (e.key === "Enter") startSearch(); });
+
+// initial sample search if input has value
+if (searchInput && searchInput.value && searchInput.value.trim() !== "") {
+  // small delay so page finishes loading
+  setTimeout(() => startSearch(), 200);
+}
