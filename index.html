@@ -1,27 +1,38 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>UAE Price Hunter</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>UAE Price Hunter — Test</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header class="header">
-    <h1>UAE Price Hunter</h1>
-    <span class="subtitle">Compare prices across stores · Amazon + SharafDG</span>
+  <header class="topbar">
+    <div class="brand">UAE Price Hunter</div>
+    <div class="meta">Compare prices across stores · Amazon + SharafDG</div>
   </header>
 
   <main class="container">
-    <div class="search-box">
-      <input id="query" type="text" placeholder="Search product…" />
+    <div class="search-row">
+      <input id="q" placeholder="Search product (eg. iphone)" value="iphone" />
       <button id="searchBtn">Search</button>
     </div>
 
-    <button id="toggleDebug">Toggle Debug</button>
-    <div id="debug" class="debug hidden"></div>
+    <div class="controls">
+      <button id="toggleDebug">Toggle Debug</button>
+      <div class="hint">Tip: open browser console for logs.</div>
+    </div>
 
-    <div id="results" class="results"></div>
+    <div id="status" class="status">Ready.</div>
+
+    <section>
+      <h2>Results</h2>
+      <div id="results" class="grid"></div>
+    </section>
+
+    <section id="debugPanel" class="debug hidden">
+      <pre id="dbg"></pre>
+    </section>
   </main>
 
   <script src="script.js"></script>
