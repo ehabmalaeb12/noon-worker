@@ -1,49 +1,44 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>UAE Price Hunter</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>UAE Price Hunter — Compare</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
-  <header class="header">
+  <header class="topbar">
     <div class="container">
-      <h1>UAE Price Hunter</h1>
-      <p>Compare prices across Amazon & SharafDG</p>
+      <h1 class="brand">UAE Price Hunter</h1>
+      <div class="meta">Compare prices across stores · Amazon + SharafDG</div>
     </div>
   </header>
 
   <main class="container">
+    <section class="search-area">
+      <input id="searchInput" placeholder="Search product (e.g. iphone)" value="iphone" />
+      <button id="searchBtn" class="primary">Search</button>
+    </section>
 
-    <!-- Search box -->
-    <div class="search-box">
-      <input
-        id="searchInput"
-        type="text"
-        placeholder="Search for iPhone, MacBook, charger..."
-      />
-      <button id="searchBtn">Search</button>
-    </div>
-
-    <!-- Actions -->
-    <div class="actions">
+    <section class="controls">
       <button id="toggleDebug" class="secondary">Toggle Debug</button>
-      <span class="hint">Tip: Amazon loads first, Sharaf follows</span>
-    </div>
+      <div class="tip">Tip: Amazon loads first; SharafDG follows (safe parallel requests)</div>
+    </section>
 
-    <!-- Results -->
-    <section id="searchResults"></section>
+    <div id="loading" class="loading" aria-hidden="true">Searching stores…</div>
 
-    <!-- Debug -->
-    <pre id="debugBox" class="debug"></pre>
+    <section id="resultsArea">
+      <h2 class="section-title">Results</h2>
+      <div id="searchResults" class="grid"></div>
+    </section>
 
+    <section class="debug-wrap">
+      <pre id="debugPanel" class="debug" aria-hidden="true"></pre>
+    </section>
   </main>
 
-  <footer class="footer">
-    <p>Powered by Amazon & SharafDG</p>
+  <footer class="footer container">
+    <small>Powered by Amazon &amp; SharafDG</small>
   </footer>
 
   <script src="script.js"></script>
