@@ -16,13 +16,13 @@
 
   <main class="container">
     <section class="search-area">
-      <input id="searchInput" placeholder="Search product (e.g. iphone)" />
+      <input id="searchInput" placeholder="Search product (e.g. iphone)" value="iphone" />
       <button id="searchBtn" class="primary">Search</button>
     </section>
 
     <section class="controls">
       <button id="toggleDebug" class="secondary">Toggle Debug</button>
-      <div class="tip">Tip: Amazon & Noon load fast; SharafDG product details may take a bit longer (we fetch them safely).</div>
+      <div class="tip">Tip: Amazon & Noon return fast; Sharaf may take slightly longer but is refined by Amazon titles.</div>
     </section>
 
     <div id="loading" class="loading" aria-hidden="true">Searching stores…</div>
@@ -33,12 +33,12 @@
     </section>
 
     <section class="debug-wrap">
-      <pre id="debugPanel" class="debug" aria-hidden="false"></pre>
+      <pre id="debugPanel" class="debug" aria-hidden="true"></pre>
     </section>
   </main>
 
   <footer class="footer container">
-    <small>Powered by Amazon, Noon &amp; SharafDG</small>
+    <small>Powered by Amazon, Noon &amp; SharafDG — results for demonstration only</small>
   </footer>
 
   <script src="script.js"></script>
