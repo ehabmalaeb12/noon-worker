@@ -2,6 +2,7 @@
   --bg:#f6f8fb; --card:#fff; --muted:#7a7f87; --accent:#1560ff; --accent-2:#ff7a00;
   --success:#10b981;
 }
+
 *{box-sizing:border-box}
 body{font-family:Inter,system-ui,Segoe UI,Arial; margin:0; background:var(--bg); color:#111}
 .container{max-width:1100px;margin:0 auto;padding:18px}
