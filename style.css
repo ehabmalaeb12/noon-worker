@@ -3,7 +3,7 @@
   --success:#10b981;
 }
 *{box-sizing:border-box}
-body{font-family:Inter,system-ui,Segoe UI,Arial; margin:0; background:var(--bg); color:#111}
+body{font-family:Inter,system-ui,Segoe UI,Arial;margin:0;background:var(--bg);color:#111}
 .container{max-width:1100px;margin:0 auto;padding:18px}
 .topbar{background:linear-gradient(90deg,#1764ff 0%, #2a9df4 100%); color:#fff; padding:22px 0}
 .brand{margin:0;font-size:22px}
@@ -28,7 +28,7 @@ button{cursor:pointer;border:0;padding:10px 14px;border-radius:10px;font-weight:
 .card a{display:inline-block;margin-top:10px;padding:10px;border-radius:8px;background:#fff;border:1px solid #e6edf6;text-decoration:none;color:var(--accent);text-align:center}
 
 .debug-wrap{margin-top:22px}
-.debug{background:#000;color:#0f0;padding:12px;border-radius:10px;height:200px;overflow:auto;display:none;white-space:pre-wrap}
+.debug{background:#0b1220;color:#ccebd9;padding:12px;border-radius:10px;height:220px;overflow:auto;display:block;white-space:pre-wrap;font-family:monospace;font-size:12px}
 
 .footer{padding:24px 18px;text-align:center;color:var(--muted);margin-top:40px}
 @media (max-width:520px){
