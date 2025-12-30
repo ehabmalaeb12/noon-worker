@@ -10,7 +10,7 @@
   <header class="topbar">
     <div class="container">
       <h1 class="brand">UAE Price Hunter</h1>
-      <div class="meta">Compare prices across stores · Amazon + SharafDG + Noon</div>
+      <div class="meta">Compare prices across stores · Amazon + SharafDG</div>
     </div>
   </header>
 
@@ -22,7 +22,7 @@
 
     <section class="controls">
       <button id="toggleDebug" class="secondary">Toggle Debug</button>
-      <div class="tip">Tip: Amazon loads first; SharafDG follows; Noon loads last (safe)</div>
+      <div class="tip">Tip: Amazon loads first; SharafDG follows (safe parallel requests)</div>
     </section>
 
     <div id="loading" class="loading" aria-hidden="true">Searching stores…</div>
@@ -33,12 +33,12 @@
     </section>
 
     <section class="debug-wrap">
-      <pre id="debugPanel" class="debug" aria-hidden="true"></pre>
+      <pre id="debugPanel" class="debug" aria-hidden="false"></pre>
     </section>
   </main>
 
   <footer class="footer container">
-    <small>Powered by Amazon, SharafDG &amp; Noon</small>
+    <small>Powered by Amazon &amp; SharafDG</small>
   </footer>
 
   <script src="script.js"></script>
