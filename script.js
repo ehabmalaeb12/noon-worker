@@ -1,17 +1,17 @@
-// script.js — safe optimized front-end (keeps existing workers untouched)
+// script.js — combined, non-destructive, adds Noon + Sharaf re-querying
 
-// CONFIG (use your existing worker URLs)
+// ---------------- CONFIG (keep worker URLs exact) ----------------
 const AMAZON_WORKER = "https://shopping-worker.ehabmalaeb2.workers.dev";
+const NOON_WORKER = "https://noon-worker.ehabmalaeb2.workers.dev";        // update if your noon worker URL differs
 const SHARAF_WORKER = "https://sharaf-worker.ehabmalaeb2.workers.dev";
-const NOON_WORKER = "https://noon-worker.ehabmalaeb2.workers.dev"; // optional; will be used if responsive
 
-// TUNABLE
-const MAX_SHARAF_PRODUCTS = 5;
-const SHARAF_CONCURRENCY = 3;
-const FETCH_RETRIES = 2;
-const FETCH_BASE_DELAY = 300;
+// ---------------- TUNABLE: speed / safety ----------------
+const MAX_SHARAF_PRODUCTS = 5;    // how many sharaf product links to fetch
+const SHARAF_CONCURRENCY = 2;     // how many sharaf product detail fetches in parallel
+const FETCH_RETRIES = 3;          // fetch retry attempts
+const FETCH_BASE_DELAY = 400;     // ms base backoff
 
-// UI refs
+// ---------------- UI refs ----------------
 const searchBtn = document.getElementById("searchBtn");
 const searchInput = document.getElementById("searchInput");
 const resultsEl = document.getElementById("searchResults");
@@ -19,28 +19,31 @@ const loadingEl = document.getElementById("loading");
 const debugPanel = document.getElementById("debugPanel");
 const toggleDebugBtn = document.getElementById("toggleDebug");
 
-let renderedItems = []; // { el, price, store, link }
-let activeSearchId = 0;
-let isSearching = false;
+// ---------------- State ----------------
+let renderedItems = []; // { el, price, store, link, title }
+let seenLinks = new Set();
+let sharafRanOnce = false;
+let sharafLastQuery = null;
+let currentSearchId = 0;
 
-// small helpers
-function now() { return new Date().toISOString(); }
-function appendDebug(...args) {
-  const text = `[${now()}] ${Array.from(args).join(" ")}\n`;
-  console.log(...args);
+// ---------------- Helpers ----------------
+function logToPanel(msg) {
+  const ts = new Date().toISOString();
+  const line = `[${ts}] ${msg}`;
+  console.log(line);
   if (debugPanel) {
-    debugPanel.textContent += text;
+    debugPanel.textContent += line + "\n";
+    // keep scroll to bottom
     debugPanel.scrollTop = debugPanel.scrollHeight;
   }
 }
+function showLoading(on = true) { loadingEl.style.display = on ? "block" : "none"; }
 function clearUI() {
   resultsEl.innerHTML = "";
   renderedItems = [];
+  seenLinks.clear();
   if (debugPanel) debugPanel.textContent = "";
   showLoading(true);
-}
-function showLoading(on = true) {
-  loadingEl.style.display = on ? "block" : "none";
 }
 function createCardElement(product) {
   const div = document.createElement("div");
@@ -61,7 +64,7 @@ function createCardElement(product) {
   return div;
 }
 
-// fetch with retries/backoff
+// safe fetch with retries/backoff
 async function fetchWithRetry(url, opts = {}, attempts = FETCH_RETRIES, baseDelay = FETCH_BASE_DELAY) {
   let lastErr = null;
   for (let i = 0; i < attempts; i++) {
@@ -71,115 +74,126 @@ async function fetchWithRetry(url, opts = {}, attempts = FETCH_RETRIES, baseDela
       return res;
     } catch (err) {
       lastErr = err;
-      appendDebug(`fetch failed (${i + 1}/${attempts}) ${url} — ${err.message || err}`);
       const wait = baseDelay * Math.pow(2, i);
+      logToPanel(`fetch failed (${i+1}/${attempts}) ${url} — ${err.message}`);
       await new Promise(r => setTimeout(r, wait));
     }
   }
   throw lastErr;
 }
 
-/* ---------------- AMAZON (worker) ---------------- */
+// ---------------- AMAZON ----------------
 async function fetchAmazon(query, sid) {
   const url = `${AMAZON_WORKER}/search?q=${encodeURIComponent(query)}`;
-  appendDebug(`Query Amazon -> ${url}`);
+  const start = Date.now();
   try {
+    logToPanel(`Amazon: start search "${query}" (sid=${sid})`);
     const res = await fetchWithRetry(url, { headers: { Accept: "application/json" } }, 2, 300);
+    if (sid !== currentSearchId) {
+      logToPanel(`Amazon: ignoring results (stale sid=${sid})`);
+      return [];
+    }
     const data = await res.json();
-    appendDebug(`Amazon results count ${data.results?.length || 0}`);
-    if (sid !== activeSearchId) { appendDebug("Amazon results ignored (old search)"); return []; }
+    logToPanel(`Amazon: got ${data.results?.length || 0} items (took ${Date.now()-start}ms)`);
     return data.results || [];
   } catch (e) {
-    appendDebug("Amazon fetch failed:", e?.message || e);
+    logToPanel(`Amazon fetch error: ${e.message || e}`);
     return [];
   }
 }
 
-/* ---------------- NOON (worker) — optional ---------------- */
+// ---------------- NOON ----------------
 async function fetchNoon(query, sid) {
   const url = `${NOON_WORKER}/search?q=${encodeURIComponent(query)}`;
-  appendDebug(`Query Noon -> ${url}`);
+  const start = Date.now();
   try {
+    logToPanel(`Noon: start search "${query}" (sid=${sid})`);
     const res = await fetchWithRetry(url, { headers: { Accept: "application/json" } }, 2, 300);
+    if (sid !== currentSearchId) {
+      logToPanel(`Noon: ignoring results (stale sid=${sid})`);
+      return [];
+    }
     const data = await res.json();
-    appendDebug(`Noon results count ${data.results?.length || 0}`);
-    if (sid !== activeSearchId) { appendDebug("Noon results ignored (old search)"); return []; }
+    logToPanel(`Noon: got ${data.results?.length || 0} items (took ${Date.now()-start}ms)`);
     return data.results || [];
   } catch (e) {
-    appendDebug("Noon fetch failed:", e?.message || e);
+    logToPanel(`Noon fetch error: ${e.message || e}`);
     return [];
   }
 }
 
-/* ---------------- SHARAF (search -> links -> products) ---------------- */
+// ---------------- SHARAF (search for product links) ----------------
 async function fetchSharafLinks(query, sid) {
   const url = `${SHARAF_WORKER}/search?q=${encodeURIComponent(query)}`;
-  appendDebug(`Query Sharaf -> ${url}`);
   try {
+    logToPanel(`Sharaf: start search "${query}" (sid=${sid})`);
     const res = await fetchWithRetry(url, { headers: { Accept: "application/json" } }, 2, 300);
+    if (sid !== currentSearchId) {
+      logToPanel(`Sharaf-search: ignoring (stale sid=${sid})`);
+      return [];
+    }
     const data = await res.json();
-    appendDebug(`Sharaf links found ${ (data.results || []).length }`);
-    if (sid !== activeSearchId) { appendDebug("Sharaf links ignored (old search)"); return []; }
     const links = (data.results || []).map(r => r.link).filter(Boolean).slice(0, MAX_SHARAF_PRODUCTS);
-    appendDebug(`Sharaf links count ${links.length}`);
+    logToPanel(`Sharaf: links count ${links.length} (sid=${sid})`);
     return links;
   } catch (e) {
-    appendDebug("Sharaf search failed:", e?.message || e);
+    logToPanel(`Sharaf search error: ${e.message || e}`);
     return [];
   }
 }
 
+// fetch product details from Sharaf product endpoint (concurrency-limited)
 async function fetchSharafProducts(links, sid) {
-  appendDebug(`Fetching Sharaf product details (${links.length})`);
   const results = [];
   let idx = 0;
-  let fetched = 0;
 
   async function worker() {
-    while (true) {
-      const pos = idx++;
-      if (pos >= links.length) break;
-      const productUrl = links[pos];
-      appendDebug(`Sharaf product fetch -> ${productUrl}`);
+    while (idx < links.length) {
+      const current = links[idx++];
+      if (sid !== currentSearchId) { logToPanel('Sharaf products worker: aborting (stale)'); return; }
+
       try {
-        const url = `${SHARAF_WORKER}/product?url=${encodeURIComponent(productUrl)}`;
+        logToPanel(`Sharaf product fetch -> ${current}`);
+        const url = `${SHARAF_WORKER}/product?url=${encodeURIComponent(current)}`;
         const res = await fetchWithRetry(url, { headers: { Accept: "application/json" } }, 2, 400);
+        if (sid !== currentSearchId) { logToPanel('Sharaf product: ignoring (stale)'); return; }
         const data = await res.json();
-        fetched++;
-        appendDebug(`Sharaf product fetched (${fetched}/${links.length}) -> ${productUrl}`);
-        if (sid !== activeSearchId) { appendDebug("Sharaf product ignored (old search)"); return; }
         if (data && (data.title || data.price || data.image)) {
           results.push(data);
           renderProduct(data);
         } else {
-          appendDebug("Sharaf product returned no fields:", productUrl);
+          logToPanel(`Sharaf product returned no useful fields -> ${current}`);
         }
-      } catch (err) {
-        fetched++;
-        appendDebug(`Sharaf product error ${productUrl} — ${err?.message || err}`);
+      } catch (e) {
+        logToPanel(`Sharaf product error ${current} — ${e.message || e}`);
       }
     }
   }
 
   const pool = Array.from({ length: Math.max(1, SHARAF_CONCURRENCY) }, () => worker());
   await Promise.all(pool);
-  appendDebug(`Sharaf product details fetch complete (${fetched}/${links.length})`);
   return results;
 }
 
-/* ---------------- Rendering + Best price badge ---------------- */
+// ---------------- Rendering + Best price ----------------
 function renderProduct(p) {
+  // dedupe by link
+  if (p.link && seenLinks.has(p.link)) return;
+  if (p.link) seenLinks.add(p.link);
+
   const el = createCardElement(p);
   resultsEl.appendChild(el);
-  const numericPrice = (p.price != null && !isNaN(Number(p.price))) ? Number(p.price) : null;
+
+  const numericPrice = (p.price && !isNaN(Number(p.price))) ? Number(p.price) : null;
   renderedItems.push({ el, price: numericPrice, store: p.store, link: p.link, title: p.title });
+
   highlightBestPrice();
 }
 
 function highlightBestPrice() {
   document.querySelectorAll(".best-badge").forEach(b => b.remove());
   const withPrice = renderedItems.filter(it => it.price != null);
-  if (!withPrice.length) return;
+  if (withPrice.length === 0) return;
   const min = Math.min(...withPrice.map(it => it.price));
   withPrice.filter(it => it.price === min).forEach(it => {
     const badge = document.createElement("span");
@@ -190,38 +204,69 @@ function highlightBestPrice() {
   });
 }
 
-/* ---------------- Main flow — parallelized safely ---------------- */
-async function startSearch() {
-  const query = (searchInput.value || "").trim();
+// ---------------- Utility: get best Amazon title (prefer long descriptive titles) ----------------
+function getBestAmazonTitle(results) {
+  if (!results || !results.length) return null;
+  return results
+    .map(r => r.title)
+    .filter(Boolean)
+    .sort((a,b) => b.length - a.length)[0] || null;
+}
+
+// ---------------- Sharaf re-run helper ----------------
+async function runSharafOnce(query, sid, reason = "initial") {
   if (!query) return;
-  if (isSearching) {
-    appendDebug("Search blocked — another search is running");
+  if (sharafLastQuery === query && sharafRanOnce) {
+    logToPanel(`Sharaf: already ran for "${query}" — skip`);
+    return;
+  }
+  sharafLastQuery = query;
+  sharafRanOnce = true;
+  logToPanel(`Sharaf: run (${reason}) with query="${query}" (sid=${sid})`);
+  const links = await fetchSharafLinks(query, sid);
+  if (links.length) {
+    await fetchSharafProducts(links, sid);
+  } else {
+    logToPanel("Sharaf: no links found for query -> " + query);
+  }
+}
+
+// ---------------- MAIN SEARCH FLOW ----------------
+async function startSearch() {
+  const q = (searchInput.value || "").trim();
+  if (!q) return;
+
+  // bump search id (used to drop stale results)
+  const sid = ++currentSearchId;
+
+  clearUI();
+  logToPanel(`==== Start search "${q}" (sid=${sid}) ====`);
+  showLoading(true);
+  sharafRanOnce = false;
+  sharafLastQuery = null;
+
+  // Start Amazon + Noon in parallel (fast UX)
+  logToPanel("Starting Amazon + Noon in parallel");
+  const amazonP = fetchAmazon(q, sid);
+  const noonP = fetchNoon(q, sid);
+
+  // Start Sharaf fallback immediately (non-blocking) but limited:
+  // We run an initial Sharaf search quickly using user query (fallback)
+  runSharafOnce(q, sid, "fallback");
+
+  // Wait for amazon + noon responses
+  const [amazonResults, noonResults] = await Promise.all([amazonP, noonP]);
+
+  // If search changed since - ignore
+  if (sid !== currentSearchId) {
+    logToPanel("Search changed — aborting render (stale)");
     return;
   }
 
-  // guard UI
-  isSearching = true;
-  searchBtn.disabled = true;
-  searchInput.disabled = true;
-  clearUI();
-
-  activeSearchId++;
-  const sid = activeSearchId;
-  appendDebug(`==== Start search "${query}" (sid=${sid}) ====`);
-
-  // start Amazon + Noon search in parallel (fast UX)
-  const amazonP = fetchAmazon(query, sid);
-  const noonP = fetchNoon(query, sid).catch(e => { appendDebug("Noon promise fail", e?.message||e); return []; });
-
-  // start Sharaf links fetch in parallel so server can run while we render Amazon/Noon
-  const sharafLinksP = fetchSharafLinks(query, sid);
-
-  // await Amazon & Noon results and render as they arrive
-  const [amazonResults, noonResults] = await Promise.all([amazonP, noonP]);
-
-  // render Amazon (fast)
-  if (sid === activeSearchId) {
-    (amazonResults || []).forEach(r => {
+  // Render Amazon items (fast)
+  if (amazonResults && amazonResults.length) {
+    logToPanel(`Rendering Amazon (${amazonResults.length})`);
+    amazonResults.forEach(r => {
       renderProduct({
         store: r.store || "Amazon.ae",
         title: r.title || r.asin || "Amazon item",
@@ -231,46 +276,50 @@ async function startSearch() {
         link: r.link || (r.asin ? `https://www.amazon.ae/dp/${r.asin}` : "#")
       });
     });
-  } else appendDebug("Amazon render skipped (old search)");
-
-  // render Noon (if any)
-  if (sid === activeSearchId && Array.isArray(noonResults) && noonResults.length) {
-    noonResults.forEach(n => {
-      renderProduct({
-        store: n.store || "Noon",
-        title: n.title || n.name || "Noon item",
-        price: n.price || null,
-        currency: n.currency || "AED",
-        image: n.image || null,
-        link: n.link || n.url || "#"
-      });
-    });
-  } else appendDebug("Noon render skipped or none");
-
-  // now wait for Sharaf links, then fetch product details
-  const sharafLinks = await sharafLinksP;
-  if (sid === activeSearchId && sharafLinks.length) {
-    await fetchSharafProducts(sharafLinks, sid);
-  } else appendDebug("No Sharaf links or search changed");
-
-  // done
-  if (sid === activeSearchId) {
-    showLoading(false);
-    appendDebug("Search finished");
   } else {
-    appendDebug("Search finished but ignored (old sid)");
+    logToPanel("Amazon returned no results");
   }
 
-  // reset UI
-  isSearching = false;
-  searchBtn.disabled = false;
-  searchInput.disabled = false;
+  // Render Noon items (parallel)
+  if (noonResults && noonResults.length) {
+    logToPanel(`Rendering Noon (${noonResults.length})`);
+    noonResults.forEach(r => {
+      renderProduct({
+        store: r.store || "Noon",
+        title: r.title || r.name || "Noon item",
+        price: r.price || null,
+        currency: r.currency || "AED",
+        image: r.image || null,
+        link: r.link || r.url || "#"
+      });
+    });
+  } else {
+    logToPanel("Noon returned no results");
+  }
+
+  // After Amazon returns, if it provides a better title than the user query -> re-run sharaf once
+  const bestAmazonTitle = getBestAmazonTitle(amazonResults);
+  if (bestAmazonTitle && bestAmazonTitle.toLowerCase() !== q.toLowerCase()) {
+    logToPanel(`Amazon provided refined title -> "${bestAmazonTitle}" ; triggering Sharaf refine`);
+    await runSharafOnce(bestAmazonTitle, sid, "amazon-refine");
+  } else {
+    logToPanel("No Amazon-refine needed for Sharaf");
+  }
+
+  showLoading(false);
+  logToPanel("Search finished");
 }
 
-/* ---------------- events ---------------- */
+// ---------------- Events ----------------
+toggleDebugBtn?.addEventListener("click", () => {
+  if (!debugPanel) return;
+  debugPanel.style.display = debugPanel.style.display === "none" ? "block" : "none";
+});
+
 searchBtn.addEventListener("click", startSearch);
 searchInput.addEventListener("keydown", (e) => { if (e.key === "Enter") startSearch(); });
-toggleDebugBtn.addEventListener("click", () => {
-  if (!debugPanel) return;
-  debugPanel.style.display = debugPanel.style.display === "block" ? "none" : "block";
-});
+
+// initial auto search (if input prefilled)
+if (searchInput && searchInput.value && searchInput.value.trim() !== "") {
+  setTimeout(() => startSearch(), 200);
+}
