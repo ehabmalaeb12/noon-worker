@@ -28,7 +28,7 @@ button{cursor:pointer;border:0;padding:10px 14px;border-radius:10px;font-weight:
 .card a{display:inline-block;margin-top:10px;padding:10px;border-radius:8px;background:#fff;border:1px solid #e6edf6;text-decoration:none;color:var(--accent);text-align:center}
 
 .debug-wrap{margin-top:22px}
-.debug{background:#000;color:#0f0;padding:12px;border-radius:10px;height:200px;overflow:auto;display:block;white-space:pre-wrap}
+.debug{background:#0b1220;color:#9effa6;padding:12px;border-radius:10px;height:220px;overflow:auto;display:none;white-space:pre-wrap;font-family:monospace;font-size:12px}
 
 .footer{padding:24px 18px;text-align:center;color:var(--muted);margin-top:40px}
 @media (max-width:520px){
